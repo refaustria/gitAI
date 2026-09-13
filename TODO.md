@@ -22,12 +22,17 @@ research. Rationale for the choices below lives in
 | [5](#phase-5--research) | Research | ongoing |
 | [6](#phase-6--scale-up) | Scale-up (optional) | 1–2 weeks |
 | [7](#phase-7--inference--write-up) | Inference & write-up | 1–2 weeks |
+| [8](#phase-8--the-self-improvement-loop) | The self-improvement loop | 2–4 weeks |
 
 ---
 
-## Phase 0 — Foundations
+## Phase 0 — Foundations ✅
 
 *Goal: a working environment, and a genuine understanding of backpropagation.*
+
+**Status: complete.** 96 tests green, ruff clean, CI running on 3.11 and 3.12.
+The one task still outstanding is the hardware benchmark, which can only be run
+on your own laptop — see below.
 
 ### Decisions to close
 
@@ -37,20 +42,21 @@ research. Rationale for the choices below lives in
 
 ### Repository & tooling
 
-- [ ] `uv init`, Python 3.12, `src/` layout, package `gitai`
-- [ ] Dependencies: `torch`, `numpy`, `duckdb`, `pyarrow`, `safetensors`, `pytest`, `ruff`, `pyright`
-- [ ] `ruff` config (lint + format), `pyright` basic mode
-- [ ] `pre-commit` hooks: ruff, ruff-format, trailing whitespace, `nbstripout`
-- [ ] GitHub Actions: lint + typecheck + fast CPU test suite on push
-- [ ] `Makefile` or `justfile`: `setup`, `test`, `lint`, `train`, `eval`
-- [ ] Commit `uv.lock`
+- [x] `uv init`, Python 3.11+, `src/` layout, package `gitai`
+- [x] Dependency groups: base (numpy only), `[train]`, `[data]`, `[dev]` — Phase 0 deliberately cannot import torch
+- [x] `ruff` config (lint + format), `pyright` basic mode
+- [x] `pre-commit` hooks: ruff, ruff-format, whitespace, `nbstripout`, large-file block
+- [x] GitHub Actions: lint + format check + CPU test suite, Python 3.11 and 3.12
+- [x] `Makefile`: `setup`, `test`, `lint`, `fmt`, `typecheck`, `bench`, `demo`, `halt`
+- [x] Commit `uv.lock`
 
 ### Understand backprop (do not skip)
 
-- [ ] Implement a reverse-mode autograd engine in NumPy (~200 lines): scalar/tensor `Value`, `+ * @ tanh relu`, topological-sort `backward()`
-- [ ] Finite-difference gradient check against it
-- [ ] Train an MLP on XOR, then MNIST, with your own engine
-- [ ] Implement SGD, then Adam, from the paper — not from memory
+- [x] Reverse-mode autograd engine in NumPy — `src/gitai/autograd/tensor.py`. Broadcasting-correct backward, iterative topo sort (a 5000-deep graph would blow the recursion limit otherwise)
+- [x] Finite-difference gradcheck — `gradcheck.py`, applied to every primitive
+- [x] MLP solves XOR with the hand-written engine (`make demo`)
+- [ ] Extend the demo to MNIST (optional; XOR already proves the gradients)
+- [x] SGD (+momentum/Nesterov), Adam, AdamW from the papers, with tests that catch a missing bias correction and prove AdamW's decoupling differs from Adam's
 
 > This is the one deliberately "inefficient" task in the plan. After it,
 > `.backward()` stops being magic, and debugging a real model becomes tractable
@@ -58,8 +64,8 @@ research. Rationale for the choices below lives in
 
 ### Benchmark your hardware ⚠️
 
-- [ ] `scripts/benchmark.py`: tokens/sec for several `(d_model, n_layer, seq_len)` on **your** machine
-- [ ] Measure CPU vs MPS (Apple Silicon) or CPU vs CPU+oneDNN (x86)
+- [x] `scripts/benchmark.py` written — four configs, tokens/sec, hours-per-100M-tokens
+- [ ] **Run it on your laptop** (`make bench`) — measure CPU vs MPS, or CPU vs oneDNN on x86
 - [ ] Measure with and without `torch.compile`
 - [ ] Record results in `docs/hardware-baseline.md`
 - [ ] Derive: largest model trainable in ~4h, in ~24h
@@ -67,7 +73,17 @@ research. Rationale for the choices below lives in
 > Every later scoping decision depends on this number. Do not accept throughput
 > figures for hardware nobody has measured — including mine.
 
-**Exit criterion:** your own autograd engine trains MNIST; `docs/hardware-baseline.md` contains measured numbers; CI is green.
+Also delivered, ahead of schedule and on purpose — the constraint layer for Phase 8:
+
+- [x] `src/gitai/safety/` — halt switch, budget, path guard, hash-chained lineage, fail-closed invariant gate
+- [x] `tests/test_safety.py` — adversarial: symlink escape, `..` traversal, log tampering, truncation, swallowing a halt in a broad `except`
+- [x] `scripts/halt.py` — operator stop button
+- [x] `docs/constitution.md`, `docs/self-improvement.md`
+
+Brakes before engine: a stop button retrofitted to a running loop is a stop
+button nobody tested.
+
+**Exit criterion:** ✅ engine trains XOR, suite green, CI passing. ⬜ `docs/hardware-baseline.md` still needs numbers from your machine.
 
 ---
 
@@ -212,11 +228,9 @@ research. Rationale for the choices below lives in
 
 *Goal: answer the question. This is the point of everything above.*
 
-### Blocking
-
-- [ ] **Choose the research question** — [Decision 12](docs/decisions.md#12-research-question--open--needs-your-decision) is still open (my recommendation: A or D)
-
-### Then
+Question **F** is now decided ([Decision 12](docs/decisions.md#12-research-question)):
+*when does a bounded self-improvement loop help, and when does it collapse?*
+Phase 5 runs the manual, single-variable version of that; Phase 8 automates it.
 
 - [ ] Write the experimental design: variables, controls, grid, seeds, success criteria
 - [ ] Pre-register predictions in `docs/lab-notebook.md`
@@ -257,6 +271,56 @@ research. Rationale for the choices below lives in
 
 ---
 
+## Phase 8 — The self-improvement loop
+
+*Goal: the loop from [self-improvement.md](docs/self-improvement.md), running
+unattended and bounded, answering question F.*
+
+**Prerequisite:** Phase 7 complete. There must be a model worth improving, a
+trustworthy eval, and a measured noise floor before any of this means anything.
+
+### Already built (Phase 0)
+
+- [x] Halt switch, finite budget, path guard, hash-chained lineage, invariant gate
+- [x] Adversarial tests for all of the above
+
+### The loop
+
+- [ ] Declare the search space explicitly — the loop may only propose from inside it
+- [ ] `propose()` — sample a candidate config / data mixture
+- [ ] `generate()` — incumbent produces synthetic data, **tagged with provenance at birth**
+- [ ] `filter()` — quality, dedup, length; rejects retained, never deleted
+- [ ] `train()` — from the incumbent checkpoint, bounded steps
+- [ ] `evaluate()` — held-out BPB + probes, ≥3 seeds
+- [ ] `gate()` — wire in `InvariantSuite`; fail-closed
+- [ ] `record()` — append to lineage on **both** promotion and rejection, with reasons
+- [ ] Halt and budget checked at every boundary
+- [ ] Wrap the whole loop in `deny_network()`
+- [ ] Checkpoint rotation that never deletes a parent
+
+### The experiment
+
+- [ ] Baseline: N iterations with **no** synthetic data — the control
+- [ ] Arm 1: **replace** real data with synthetic each round
+- [ ] Arm 2: **accumulate** real + synthetic each round
+- [ ] Measure the collapse boundary: where do rejections start clustering?
+- [ ] Confirm the headline prediction: training loss keeps falling while held-out BPB rises
+- [ ] Vary synthetic fraction, filter aggressiveness, generation temperature
+- [ ] Write up in `docs/results.md`, negative results included
+
+### Operational
+
+- [ ] Runbook: how to start it, how to stop it, what to check on
+- [ ] OS-level isolation for long runs — container, unprivileged user, cgroup limits
+      (the Python guards are not a security boundary; see constitution.md)
+- [ ] Dashboard or digest so an unattended run is legible the next morning
+
+**Exit criterion:** the loop runs unattended for its full budget, stops cleanly
+on exhaustion, never promotes a regression, and produces a lineage that verifies.
+Then: an answer to question F.
+
+---
+
 ## Things that will bite you
 
 Collected failure modes, written down now so they're recognisable later.
@@ -275,12 +339,15 @@ Collected failure modes, written down now so they're recognisable later.
 | **Infrastructure outgrows results** — the classic solo-project death | The deferred list in decisions.md; respect the triggers |
 | **Retrofitting a story onto whatever happened** | Pre-register predictions before each run |
 | **Vocab copied from GPT-2 (50k)** — embeddings eat the parameter budget | 4k–8k, tied embeddings, Decision 4 |
+| **Model collapse** — self-generated data degrades the model *while training loss falls* | Held-out gate the loop cannot influence; `NoRegression` |
+| **Provenance loss** — synthetic data mixed into the corpus untagged, permanently | `GeneratedDataQuarantined`; tag at generation time |
+| **A loop that logs only its wins** — the rejections were the dataset | Lineage records rejections with reasons |
+| **`except Exception` swallowing a stop request** | `HaltRequested` derives from `BaseException` |
 
 ---
 
 ## Open questions for you
 
-1. **[Decision 12](docs/decisions.md#12-research-question--open--needs-your-decision) — the research question.** Blocks Phase 5, nothing earlier. My recommendation: **A** (depth vs width at fixed budget) for the safe, guaranteed-result path; **D** (induction-head emergence) for the more exciting one.
-2. **Which laptop?** x86 vs Apple Silicon changes achievable scale substantially.
-3. **Time budget per week?** Determines whether the phase estimates are realistic.
-4. **Any appetite for spending money on rented GPU?** Changes whether Phase 6 is real or theoretical.
+1. **Which laptop?** x86 vs Apple Silicon changes achievable scale substantially — and `make bench` can only be run by you.
+2. **Do you accept the two changes to the axioms?** Corrigibility added above self-preservation, and "never hurt itself" read as *never destroy your own auditability* rather than *never cease to exist*. Reasoning in [constitution.md](docs/constitution.md); push back if you disagree.
+3. **Any appetite for spending money on rented GPU?** Changes whether Phase 6 is real or theoretical.

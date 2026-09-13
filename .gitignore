@@ -37,3 +37,7 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# Operator halt signal — runtime state, outside every root the loop may write to
+control/
+!control/.gitkeep

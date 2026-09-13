@@ -25,8 +25,10 @@ Status values: `Proposed` (my recommendation, awaiting your call) ·
 | 9 | Code quality & testing | ruff + pytest + pyright + pre-commit + CPU-only CI | Proposed |
 | 10 | Primary metric | Bits-per-byte, not perplexity | Proposed |
 | 11 | Corpus | TinyShakespeare → TinyStories → FineWeb-Edu sample | Proposed |
-| 12 | **Research question** | Needs your choice — shortlist below | **Open** |
+| 12 | **Research question** | **F — when does a self-improvement loop help vs. collapse?** | **Decided** |
 | 13 | Licence | MIT for code; per-dataset tracking for data | Proposed |
+| 14 | Self-improvement scope | The *loop* improves, not the model; weights/data/config only | **Decided** |
+| 15 | Code immutability | The loop may never modify its own source. Absolute | **Decided** |
 
 ---
 
@@ -285,37 +287,42 @@ downloading it.
 
 ---
 
-## 12. Research question ⚠️ OPEN — needs your decision
+## 12. Research question
 
 "Train an LLM" is a project, not a research question. Research needs a question
-with an answer that is not already known to you. Since compute is the binding
-constraint, the good questions are the ones where *small scale is a feature*.
+whose answer you do not already know. Since compute is the binding constraint,
+the good questions are the ones where *small scale is a feature*.
 
-Shortlist, all genuinely tractable at 1–50M parameters on a laptop:
+**Decided: question F**, which follows directly from the self-improvement
+requirement rather than being chosen arbitrarily:
 
-| # | Question | Why it works here | Effort |
-|---|---|---|---|
-| **A** | **Depth vs width at a fixed parameter budget.** Given exactly 10M params, is 4 layers × 512 dim better than 12 layers × 288? | Clean, cheap, a real open question at small scale, ~15 runs | Low |
-| **B** | **Vocabulary size vs model capacity.** At a fixed total parameter budget, how should you split between embedding table and transformer blocks? | Directly follows from Decision 4; under-studied at small scale; you'd learn tokenizers deeply | Low |
-| **C** | **Do Chinchilla scaling laws hold at 1–50M params?** Fit the compute-optimal token/parameter ratio on a laptop | Beautiful result if it holds, more interesting if it doesn't. Needs a careful grid | Medium |
-| **D** | **When do induction heads emerge?** At what depth/width/data volume does in-context copying appear? | Mechanistic interpretability, needs small models to be tractable, visually compelling results | Medium |
-| **E** | **Data quality vs quantity.** TinyStories vs filtered web at matched token counts | Practically important; the curation work is reusable | Medium |
+> **Under what conditions does a bounded self-improvement loop improve a small
+> language model, and when does it collapse? Does accumulating real and
+> synthetic data, rather than replacing real with synthetic, change the answer?**
 
-**My recommendation: A or D.**
+This is a genuinely open question with a live literature and a real chance of a
+negative result. Training a model on its own output degrades it — and crucially,
+**training loss keeps falling while the model gets worse**, so a naive loop walks
+into collapse while its own metrics applaud. There is a competing result holding
+that data *accumulation* rather than *replacement* avoids collapse. That is
+directly testable at laptop scale with the infrastructure this project builds
+anyway.
 
-- **A** if you want a guaranteed publishable-quality result and a smooth
-  on-ramp — it is the cheapest, the least likely to fail, and the
-  infrastructure it forces you to build (sweep harness, seed variance, scaling
-  plots) is exactly what every later question needs.
-- **D** if you want the more intellectually exciting project. Induction heads are
-  the clearest known example of a concrete, interpretable circuit appearing in a
-  transformer, and watching one form in a model you wrote yourself is a genuinely
-  rare experience. Higher variance, higher payoff.
+Full design in [self-improvement.md](self-improvement.md).
 
-You can start Phases 0–3 without answering this — the infrastructure is identical
-either way. It must be answered before Phase 5.
+The original shortlist is retained below, because each remains a good question
+and several make excellent sub-experiments once the loop exists — **A** in
+particular is the natural first thing for the loop to search over.
 
-**Status: OPEN**
+| # | Question | Effort |
+|---|---|---|
+| A | Depth vs width at a fixed parameter budget | Low |
+| B | Vocabulary size vs model capacity at a fixed budget | Low |
+| C | Do Chinchilla scaling laws hold at 1–50M params? | Medium |
+| D | When do induction heads emerge? | Medium |
+| E | Data quality vs quantity | Medium |
+
+**Status: Decided**
 
 ---
 
@@ -326,6 +333,50 @@ either way. It must be answered before Phase 5.
 redistribution, so never commit corpus content to git regardless.
 
 **Status: Proposed**
+
+---
+
+## 14. Self-improvement scope
+
+**What improves is the loop, not the model.** A 1–50M parameter model cannot
+improve itself in the recursive sense — it cannot read its own source, reason
+about its architecture, or write a correct patch. Building machinery for
+recursive self-modification would mean elaborate plumbing around a component
+incapable of using it, and the plumbing is what would then carry the bugs.
+
+The loop is a bounded search procedure over **weights, data, and configuration**.
+It proposes candidates, trains, evaluates on held-out data it cannot see, and
+promotes only through a fail-closed invariant gate. That is self-improvement in
+the only sense available at this scale, and — worth noting — in the sense that
+has produced essentially every real advance in the field.
+
+Rejected candidates are recorded, not discarded: the collapse boundary is
+defined by where rejections cluster, so a loop that logs only its wins answers
+no question at all.
+
+**Status: Decided** — see [self-improvement.md](self-improvement.md)
+
+---
+
+## 15. Code immutability
+
+**The loop may never modify its own source code.** Absolute, not a default.
+
+- **May change:** model weights, data mixtures, generated data, hyperparameters,
+  architecture configuration within a pre-declared search space.
+- **May never change:** its own source, the invariants, the halt switch, the
+  budget, the lineage log, or anything under `src/gitai/safety/`.
+
+Code changes go through git, a diff, and a human. Every loop version that ever
+ran is pinned by commit SHA in the lineage.
+
+This is both the safety boundary and the honesty boundary. Recursive code
+self-modification is where a self-improving system becomes genuinely hazardous,
+and — far more relevantly here — it is not a capability a TinyStories-scale
+model has. Pretending otherwise is cargo-culting, and the pretence is what would
+let a real bug through.
+
+**Status: Decided** — enforced per [constitution.md](constitution.md)
 
 ---
 
@@ -343,6 +394,7 @@ fires.
 | Hydra, sweep orchestration | Manual sweeps become the slow part |
 | Quantisation, distillation | A trained model needs to be smaller |
 | Instruction tuning / RLHF | A base model worth aligning exists |
+| The improvement loop itself | Phase 7 complete — a model worth improving exists. Its *constraints* are already built (Phase 0) |
 
 Adding any of these before its trigger is the most common way a solo research
 project dies: infrastructure grows faster than results.
