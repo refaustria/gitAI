@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from gitai.data import BatchSampler, ShardIndex
 from gitai.interpret import bits_per_byte, surprisal_bits
-from gitai.model import ModelConfig, Transformer
+from gitai.model import RUNGS, BigramModel, ModelConfig, Transformer
 from gitai.tokenizer import ByteBPETokenizer, CharTokenizer
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -118,16 +118,24 @@ def main() -> None:
     index = ShardIndex.load(data_dir)
     tokenizer = load_tokenizer(data_dir / "tokenizer.json")
 
-    config = ModelConfig(
-        vocab_size=index.vocab_size,
-        seq_len=args.seq_len,
-        d_model=args.d_model,
-        n_layer=args.n_layer,
-        n_head=args.n_head,
-        **__import__("gitai.model", fromlist=["RUNGS"]).RUNGS[args.rung],
-    )
-    model = Transformer(config)
-    print(config.summary())
+    if args.rung == "bigram":
+        # The floor. A context-free lookup table: whatever loss it reaches is the
+        # best any model without context can do, which is what turns "is 1.87
+        # good?" from an opinion into a measurement.
+        model = BigramModel(index.vocab_size)
+        config = None
+        print(f"bigram baseline: {model.num_parameters():,} parameters (all embedding)")
+    else:
+        config = ModelConfig(
+            vocab_size=index.vocab_size,
+            seq_len=args.seq_len,
+            d_model=args.d_model,
+            n_layer=args.n_layer,
+            n_head=args.n_head,
+            **RUNGS[args.rung],
+        )
+        model = Transformer(config)
+        print(config.summary())
 
     train = BatchSampler(data_dir, "train", args.seq_len, index=index)
     val = BatchSampler(data_dir, "val", args.seq_len, index=index)
@@ -153,7 +161,11 @@ def main() -> None:
     (run_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
 
     (run_dir / "config.yaml").write_text(
-        json.dumps({"model": asdict(config), "training": vars(args)}, indent=2), encoding="utf-8"
+        json.dumps(
+            {"model": asdict(config) if config else {"kind": "bigram"}, "training": vars(args)},
+            indent=2,
+        ),
+        encoding="utf-8",
     )
     (run_dir / "manifest.json").write_text(
         json.dumps(
@@ -166,7 +178,11 @@ def main() -> None:
                 "seeds": {"torch": args.seed, "numpy": args.seed},
                 "platform": platform.platform(),
                 "torch": torch.__version__,
-                "parameters": config.parameter_count(),
+                "parameters": (
+                    config.parameter_count()
+                    if config
+                    else {"total": model.num_parameters(), "non_embedding": 0}
+                ),
             },
             indent=2,
         ),
@@ -226,16 +242,31 @@ def main() -> None:
 
                 save_model(model, str(run_dir / "checkpoints" / "best.safetensors"))
                 (run_dir / "checkpoints" / "best.json").write_text(
-                    json.dumps({"step": step, **stats, "model": asdict(config)}, indent=2)
+                    json.dumps(
+                        {
+                            "step": step,
+                            **stats,
+                            "rung": args.rung,
+                            "model": asdict(config) if config else {"kind": "bigram"},
+                        },
+                        indent=2,
+                    )
                 )
 
     metrics_file.close()
 
     print("\nsample (temperature 0.8):")
     prompt = torch.tensor([tokenizer.encode("First Citizen:\n")], dtype=torch.long)
-    sample = model.generate(
-        prompt, 300, temperature=0.8, top_k=40, generator=torch.Generator().manual_seed(args.seed)
-    )
+    if args.rung == "bigram":
+        sample = model.generate(prompt, 300, temperature=0.8)
+    else:
+        sample = model.generate(
+            prompt,
+            300,
+            temperature=0.8,
+            top_k=40,
+            generator=torch.Generator().manual_seed(args.seed),
+        )
     print("-" * 72)
     print(tokenizer.decode(sample[0].tolist()))
     print("-" * 72)

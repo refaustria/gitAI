@@ -18,7 +18,7 @@ research. Rationale for the choices below lives in
 | [1](#phase-1--data-pipeline) | Data pipeline | ✅ done |
 | [2](#phase-2--the-model) | The model | ✅ done |
 | [3](#phase-3--training-loop) | Training loop | 1–2 weeks |
-| [4](#phase-4--evaluation-harness) | Evaluation harness | 1–2 weeks |
+| [4](#phase-4--evaluation-harness) | Evaluation harness | ✅ done |
 | [5](#phase-5--research) | Research | ongoing |
 | [6](#phase-6--scale-up) | Scale-up (optional) | 1–2 weeks |
 | [7](#phase-7--inference--write-up) | Inference & write-up | 1–2 weeks |
@@ -233,27 +233,40 @@ inspect. What remains is marked below.
 
 ---
 
-## Phase 4 — Evaluation harness
+## Phase 4 — Evaluation harness ✅
 
 *Goal: turn training runs into comparable measurements.*
+
+**Status: complete.** `make eval` scores a checkpoint, `make report` rebuilds the
+index and prints seed-aggregated comparisons, `make noise-floor` measures the
+significance threshold. Results in [docs/results.md](docs/results.md); method in
+[docs/lab-notebook.md](docs/lab-notebook.md).
 *See [docs/evaluation.md](docs/evaluation.md).*
 
-- [ ] **Bits-per-byte** implementation (primary metric) + unit test against a known value
-- [ ] Perplexity and token accuracy (clearly labelled tokenizer-dependent)
-- [ ] Fixed-prompt, fixed-seed generation dumped to file at every eval
-- [ ] Synthetic probes: copying, sorting, modular arithmetic, Dyck
-- [ ] Optional LLM-as-judge scoring for grammar / consistency / creativity
-- [ ] `runs/` → `runs/index.db` ingest script (SQLite, rebuildable from scratch)
-- [ ] `report.py`: comparison tables and plots **generated from the database**, never by hand
-- [ ] Eval-suite version stamped into every result
+- [x] **Bits-per-byte** + a test that an untrained model scores exactly log2(vocab)
+- [x] Perplexity, bits/token and top-1/top-5 accuracy, all labelled tokenizer-dependent in the output
+- [x] Fixed-prompt, fixed-seed samples written into every `EvalResult`
+- [x] Synthetic tasks: copy, sort, modular arithmetic, Dyck — with generators, exact-match scoring, and tests that each task's own answers are correct
+- [x] **Induction probe** — works on any trained model, with a positive control that a model trained on repeats develops it
+- [ ] Optional LLM-as-judge scoring — deferred; the fixed-prompt samples cover the qualitative need for now
+- [x] `runs/` → `runs/index.db` (SQLite), rebuilt from scratch on every invocation
+- [x] `report.py`: leaderboard and seed-aggregated tables, all queries
+- [ ] Plots (tables only so far)
+- [x] `EVAL_SUITE_VERSION` stamped into every result
 
 ### Methodology setup ⚠️
 
-- [ ] **Measure the seed noise floor**: 5 seeds, one config, record the spread in final val loss
-- [ ] Write that number into `docs/hardware-baseline.md` and treat it as the significance threshold from then on
-- [ ] Start `docs/lab-notebook.md` — question, prediction, and falsification criterion, written *before* each experiment
+- [x] **Seed noise floor measured** — 5 seeds, one config; see results.md R5
+- [x] Recorded as the significance threshold; `compare_groups` refuses any effect below it
+- [x] `docs/lab-notebook.md` started, with E1's prediction recorded before the sweep finished
 
-**Exit criterion:** one command produces a seed-averaged comparison table across N runs; the noise floor is a known number.
+Also delivered:
+
+- [x] Exact **permutation test** for significance — dependency-free, no normality assumption, and honest about how little power 5 seeds buys
+- [x] `compare_groups` vetoes any effect below the measured noise floor, even when statistically significant
+- [x] **Bigram baseline run** — the context-free floor that makes the headline number interpretable
+
+**Exit criterion:** ✅ `make report` produces a seed-averaged comparison table; the noise floor is a measured number.
 
 ---
 

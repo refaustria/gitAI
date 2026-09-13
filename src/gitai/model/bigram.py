@@ -39,10 +39,26 @@ class BigramModel(nn.Module):
 
     @torch.no_grad()
     def generate(
-        self, idx: torch.Tensor, max_new_tokens: int, temperature: float = 1.0
+        self,
+        idx: torch.Tensor,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        generator: torch.Generator | None = None,
     ) -> torch.Tensor:
+        """Sample a continuation.
+
+        ``temperature <= 0`` means greedy argmax, matching
+        :meth:`~gitai.model.transformer.Transformer.generate`. Approximating it
+        with a very small temperature instead would make the two models disagree
+        under an evaluation that asks both for their single best answer.
+        """
         for _ in range(max_new_tokens):
             logits, _ = self(idx[:, -1:])
-            probs = F.softmax(logits[:, -1, :] / max(temperature, 1e-6), dim=-1)
-            idx = torch.cat((idx, torch.multinomial(probs, 1)), dim=1)
+            row = logits[:, -1, :]
+            if temperature <= 0:
+                nxt = row.argmax(dim=-1, keepdim=True)
+            else:
+                probs = F.softmax(row / temperature, dim=-1)
+                nxt = torch.multinomial(probs, 1, generator=generator)
+            idx = torch.cat((idx, nxt), dim=1)
         return idx
