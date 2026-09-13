@@ -1,0 +1,39 @@
+# Data — never commit corpora or derived artefacts
+data/raw/
+data/interim/
+data/processed/
+!data/raw/MANIFEST.json
+!data/LICENSES.md
+
+# Runs, checkpoints, artefacts
+runs/
+*.bin
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+wandb/
+mlruns/
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+
+# Environment & editors
+.env
+.env.local
+.DS_Store
+.idea/
+.vscode/
