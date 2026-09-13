@@ -16,7 +16,7 @@ research. Rationale for the choices below lives in
 |---|---|---|
 | [0](#phase-0--foundations) | Foundations & understanding | 1–2 weeks |
 | [1](#phase-1--data-pipeline) | Data pipeline | ✅ done |
-| [2](#phase-2--the-model) | The model | 2–3 weeks |
+| [2](#phase-2--the-model) | The model | ✅ done |
 | [3](#phase-3--training-loop) | Training loop | 1–2 weeks |
 | [4](#phase-4--evaluation-harness) | Evaluation harness | 1–2 weeks |
 | [5](#phase-5--research) | Research | ongoing |
@@ -138,29 +138,39 @@ Also delivered:
 
 ---
 
-## Phase 2 — The model
+## Phase 2 — The model ✅
 
 *Goal: a correct decoder-only transformer, built one rung at a time.*
-*Each rung gets a git tag — the ladder is the learning.*
+
+**Status: complete.** The ladder is expressed as configuration (`model/config.py`
+`RUNGS`) rather than seven classes, so each rung is one flag from the last and
+"did this help?" is a controlled experiment. A 1M-parameter model trains to
+1.87 BPB on TinyShakespeare in ~2 minutes — [R4](docs/results.md).
+
+Instrumentation was built in from the first rung rather than retrofitted; see
+[docs/interpretability.md](docs/interpretability.md).
 
 ### The ladder
 
-- [ ] **v0 — bigram.** Lookup table. Establishes the loss baseline everything else must beat
-- [ ] **v1 — single-head self-attention.** Write the causal mask by hand
-- [ ] **v2 — multi-head + MLP + residual + LayerNorm.** This is GPT-2
-- [ ] **v3 — RMSNorm** replaces LayerNorm
-- [ ] **v4 — RoPE** replaces learned positional embeddings
-- [ ] **v5 — SwiGLU** replaces the GELU MLP (use 8/3× hidden ratio)
-- [ ] **v6 — remove biases, tie embeddings**
+- [x] **v0 — bigram.** `BigramModel` — starts at exactly ln(V), no non-embedding params
+- [ ] Run it on TinyShakespeare to get the actual floor (needed before 1.87 BPB means anything)
+- [x] **v1 — single-head self-attention**, causal mask written by hand
+- [x] **v2 — multi-head + MLP + residual + LayerNorm** (GPT-2)
+- [x] **v3 — RMSNorm** replaces LayerNorm
+- [x] **v4 — RoPE** replaces learned positions, with a test of the relative-position property
+- [x] **v5 — SwiGLU** at 8/3 width, with a test that it matches GELU's parameter count
+- [x] **v6 — no biases, tied embeddings**
+- [ ] Tag each rung in git
 
 ### Correctness tests (the highest-value code in the repo)
 
-- [ ] **Overfit one batch**: 32 examples → ≈0 loss in <500 steps. Catches most bugs in 30 seconds
-- [ ] **Causality**: perturb token *t*, assert logits at positions < *t* are bit-identical
-- [ ] Shape and dtype contracts at every layer boundary
-- [ ] Determinism: same seed ⇒ identical loss for N steps
-- [ ] Parameter count matches a hand-derived formula (catches silent architecture errors)
-- [ ] Compare v2 numerically against a reference GPT-2 implementation on identical weights
+- [x] **Overfit one batch** — every rung, 8 sequences to <0.1 loss
+- [x] **Causality** — every rung, both the fused and instrumented attention paths
+- [x] Shape and dtype contracts; cache completeness
+- [x] Determinism: same seed ⇒ identical weights and identical forward
+- [x] Parameter count matches a hand-derived formula, every rung, embedding split out
+- [x] Fused vs instrumented attention agree numerically (the dual-implementation check)
+- [x] Initial loss = ln(vocab); tied embeddings' copy-prior pinned down as a test
 
 > The causality test deserves special attention. A mask off-by-one **still trains
 > to a plausible loss curve** — the model just cheats. Without this test the bug
@@ -168,34 +178,47 @@ Also delivered:
 
 ### Initialisation & numerics
 
-- [ ] Scaled init (residual projections scaled by `1/sqrt(2 * n_layer)`)
-- [ ] Verify activation and gradient statistics don't explode or vanish with depth
-- [ ] Parameter-count and FLOPs calculators, embedding vs non-embedding split out
+- [x] Scaled init — residual projections by `1/sqrt(2 * n_layer)`
+- [x] Gradients reach every parameter (no dead weights)
+- [ ] Activation/gradient statistics vs depth — still to plot
+- [x] Parameter-count calculator with the embedding split
+- [ ] FLOPs calculator (needed for compute-matched comparison in Phase 5)
 
-**Exit criterion:** v6 passes every test above and overfits a single batch reliably.
+Also delivered — instrumentation and a working trainer, both brought forward:
+
+- [x] `ActivationCache` — every intermediate optionally captured, free when unused
+- [x] `src/gitai/interpret/` — surprisal, logit lens, exact logit attribution, head ablation, activation patching, terminal rendering
+- [x] `scripts/inspect_model.py` (`make inspect`) and `scripts/train.py` (`make train`)
+- [x] [docs/interpretability.md](docs/interpretability.md)
+
+**Exit criterion:** ✅ every rung passes causality, overfit-one-batch and the parameter formula; a trained model reaches 1.87 BPB and can be inspected end to end.
 
 ---
 
-## Phase 3 — Training loop
+## Phase 3 — Training loop *(partly done)*
 
 *Goal: runs that are resumable, reproducible, and fully recorded.*
 
+`scripts/train.py` already does the core loop, the schedule, the run directory
+and checkpointing — brought forward because Phase 2 needed a trained model to
+inspect. What remains is marked below.
+
 ### Core loop
 
-- [ ] AdamW with correct weight-decay grouping (no decay on norms, biases, embeddings)
-- [ ] Cosine LR schedule with linear warmup
-- [ ] Gradient clipping
+- [x] AdamW with correct weight-decay grouping (matrices only)
+- [x] Cosine LR schedule with linear warmup
+- [x] Gradient clipping, norm logged
 - [ ] Gradient accumulation — **test equivalence**: `accum=4, bs=8` ≈ `accum=1, bs=32`
 - [ ] Mixed precision where the device supports it (bf16 on MPS/CUDA; measure on CPU before assuming a win)
-- [ ] Periodic eval on held-out data, with sample generation
+- [x] Periodic eval (sequential, not sampled) reporting loss and BPB, plus sample generation
 
 ### Run infrastructure
 
-- [ ] `runs/<timestamp>-<name>/` created per run
-- [ ] Resolved `config.yaml` written at start
-- [ ] `manifest.json`: git SHA, dirty flag, data hash, tokenizer hash, hardware, versions, seeds
-- [ ] `metrics.jsonl` streamed per log step
-- [ ] Checkpoints in **safetensors**, never pickle
+- [x] `runs/<timestamp>-<name>/` created per run
+- [x] Resolved `config.yaml` written before the first step
+- [x] `manifest.json`: git SHA, dirty flag, tokenizer fingerprint, hardware, versions, seeds
+- [x] `metrics.jsonl` streamed per log step
+- [x] Checkpoints in **safetensors** — via `save_model`, because tied weights alias storage and `save_file` refuses to write it
 - [ ] Checkpoint rotation — a full laptop disk mid-run is a real and infuriating failure
 - [ ] **Resume**: reload model, optimiser state, LR schedule position, RNG state, data position
 - [ ] Test resume: interrupt at step N, resume, assert trajectory matches an uninterrupted run

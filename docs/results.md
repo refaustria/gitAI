@@ -68,6 +68,54 @@ in Phase 5.
 
 ---
 
+## R4 — First trained model (TinyShakespeare)
+
+**Date:** 2026-09-13 · **Reproduce:** `make data && make train`
+
+| | |
+|---|---|
+| Architecture | `v6_modern` — 4L x 128d x 4h, RMSNorm / RoPE / SwiGLU / no bias / tied |
+| Parameters | **1,049,216** (787,072 non-embedding, 262,144 embedding) |
+| Data | 372,993 train tokens, vocab 2,048 |
+| Training | 1,200 steps x 16 x 128 = 6.6 epochs |
+| Throughput | ~19,200 tokens/sec (4-core cloud CPU — **not** a target-machine number) |
+| Wall clock | ~2 minutes |
+| **Held-out BPB** | **1.8732** |
+| Val loss | 3.6710 |
+
+Sample at temperature 0.8, top-k 40:
+
+```
+First Citizen:
+This is the house I do attend you to them?
+First Senator:
+If he become, thou cross,
+To see what thou hast made it to wide?
+ESCALUS:
+I am of them in the rest.
+```
+
+At one million parameters and two minutes of CPU, the model has learned the
+corpus *format* essentially perfectly — speaker names, the colon, the newline,
+document separators in the right places — plus grammatical local English and
+character names specific to the source text. It has not learned meaning, and at
+this scale it will not.
+
+The comparison class is small models on similar data, never a frontier model.
+This is ~0.001% the size of one; comparing them is a category error that would
+obscure whether 1.87 BPB is actually good here.
+
+### Still missing, and needed before this number means much
+
+- **No seed variance.** One run, one seed. Per [evaluation.md](evaluation.md),
+  nothing should be concluded from a single seed — the noise floor has not been
+  measured yet, so the significance threshold is unknown. That is a Phase 4 task
+  and it blocks every comparison.
+- **No bigram baseline.** `BigramModel` exists but has not been run on this
+  corpus, so the floor that turns "is 1.87 good?" into a measurement is missing.
+
+---
+
 ## R2 — Pipeline throughput (this container, not a target machine)
 
 **Date:** 2026-09-13 · **Caveat:** measured in a cloud container, **not** on the
