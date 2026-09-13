@@ -54,14 +54,49 @@ any two runs you would actually compare.
 
 ### Result
 
-*(filled in below once the sweep completed — see [results.md](results.md) R5)*
+| seed | val BPB |
+|---:|---:|
+| 0 | 1.8892 |
+| 1 | 1.8910 |
+| 2 | 1.8908 |
+| 3 | 1.8991 |
+| 4 | 1.8950 |
+
+**mean 1.8930 · std 0.0040 · spread 0.0099**
+
+### Verdict on the prediction: **wrong, narrowly**
+
+I predicted std **0.005–0.02**. The measured value is **0.0040** — below the
+bottom of my range. Same for spread: predicted 0.01–0.06, measured 0.0099.
+
+The miss is small but it is a miss, and it is recorded rather than quietly
+rounded into "as expected". The model is *more* stable across seeds than I
+expected. The likely reason is the one I half-identified in the reasoning and
+then under-weighted: at 6.6 epochs over a 373k-token corpus every run sees
+essentially the same data in a different order, and at 1M parameters the model is
+nowhere near capacity-limited, so there is little room for seeds to diverge.
+
+Neither falsification criterion fired: std was not above 0.05 (training is
+stable at this lr), and not below 0.001 (the seed is genuinely varying the run).
+
+### Unplanned observation
+
+Seed 0 ran at **1,764 tokens/sec** while the other four ran at ~19,500 — it was
+competing with two test processes for four cores. Its BPB (1.8892) was
+nevertheless the *best* of the five. Worth stating plainly: **CPU contention
+changes wall-clock, not results.** The run is reproducible regardless of what
+else the machine was doing, which is exactly what the determinism work was for.
 
 ### What it means for the project
 
-Whatever the number, it becomes the `NoRegression` tolerance in
-`safety/invariants.py` for the Phase 8 improvement loop. A promotion gate set
-tighter than the noise floor fires on chance; set much looser, it lets real
-degradation through.
+**0.0040 BPB is now the significance threshold for this project.** Any
+configuration change producing less than that is indistinguishable from chance,
+and `compare_groups` refuses to call it an effect regardless of p-value.
+
+It also sets the `NoRegression` tolerance for the Phase 8 loop. The current
+default of 0.01 is 2.5x the noise floor — conservative, which is the right side
+to err on: a gate tighter than the noise floor fires on chance and gets disabled,
+which is worse than one that occasionally lets a small regression through.
 
 ---
 

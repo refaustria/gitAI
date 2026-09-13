@@ -68,6 +68,69 @@ in Phase 5.
 
 ---
 
+## R5 — Seed noise floor  ⭐ the number every later comparison depends on
+
+**Date:** 2026-09-13 · **Reproduce:** `make noise-floor` · **Pre-registered:**
+[lab-notebook E1](lab-notebook.md#e1--what-is-the-seed-noise-floor)
+
+One configuration (`v6_modern`, 1,049,216 params, 1000 steps), five seeds,
+nothing else varied. The seed controls both weight initialisation and batch
+order — which is the right thing to measure, because that is what differs
+between any two runs you would actually compare.
+
+| seed | val BPB | tokens/sec |
+|---:|---:|---:|
+| 0 | 1.8892 | 1,764 |
+| 1 | 1.8910 | 19,160 |
+| 2 | 1.8908 | 19,506 |
+| 3 | 1.8991 | 19,665 |
+| 4 | 1.8950 | 19,623 |
+
+**mean 1.8930 · std 0.0040 · spread 0.0099**
+
+### What it says
+
+> **0.0040 BPB is the significance threshold for this project.** A configuration
+> change that moves held-out BPB by less than that has not been shown to do
+> anything, no matter how clean the plot looks or how small the p-value is.
+
+`compare_groups` enforces this: an effect below the noise floor is reported as
+"below the noise floor — no effect" even when the permutation test says p < 0.01.
+A statistically significant difference smaller than seed variance is an artefact
+of too small a sample, not a finding.
+
+This also sets the `NoRegression` tolerance for the Phase 8 improvement loop.
+The default 0.01 is 2.5x the floor — deliberately conservative, because a gate
+tighter than the noise floor fires on chance and then gets disabled, which is
+worse than one that occasionally passes a small regression.
+
+### The prediction was wrong
+
+E1 predicted std 0.005–0.02; the measured 0.0040 is below that range. Recorded
+rather than rounded into "as expected". The model is more seed-stable than I
+expected, most likely because 6.6 epochs over a small corpus means every run sees
+nearly the same data and a 1M-parameter model is far from capacity-limited on it.
+
+### Seed 0 ran 11x slower and still scored best
+
+It was competing with two test processes for four cores. Its BPB was
+nevertheless the lowest of the five. **CPU contention changes wall-clock, not
+results** — the determinism guarantees hold regardless of what else the machine
+is doing.
+
+### Caveats
+
+- **Measured at one configuration.** The noise floor is not a universal
+  constant; a larger model, a different lr, or a bigger corpus will have its own.
+  Re-measure when the configuration changes materially, especially on TinyStories.
+- **Five seeds is not many.** The std itself has meaningful uncertainty. Treat
+  0.0040 as an order-of-magnitude guide, not a precise constant.
+- **The bigram baseline has n=1.** With an effect of 1.35 BPB (337x the noise
+  floor) that is academic, but it should get more seeds before appearing in any
+  write-up as a measured comparison.
+
+---
+
 ## R4 — First trained model (TinyShakespeare)
 
 **Date:** 2026-09-13 · **Reproduce:** `make data && make train`

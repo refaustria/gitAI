@@ -89,6 +89,11 @@ class NoRegression:
     docs/evaluation.md), not guessed. Below the noise floor you cannot
     distinguish degradation from chance, and a gate that fires on noise is a
     gate that gets disabled.
+
+    Measured for this project at 0.0040 BPB (docs/results.md R5, five seeds of
+    one configuration). The 0.01 default is 2.5x that — conservative on purpose,
+    since letting a small regression through costs one iteration whereas a gate
+    that cries wolf gets switched off.
     """
 
     metric: str = "val_bpb"
