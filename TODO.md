@@ -15,7 +15,7 @@ research. Rationale for the choices below lives in
 | Phase | Theme | Estimate |
 |---|---|---|
 | [0](#phase-0--foundations) | Foundations & understanding | 1–2 weeks |
-| [1](#phase-1--data-pipeline) | Data pipeline | 1–2 weeks |
+| [1](#phase-1--data-pipeline) | Data pipeline | ✅ done |
 | [2](#phase-2--the-model) | The model | 2–3 weeks |
 | [3](#phase-3--training-loop) | Training loop | 1–2 weeks |
 | [4](#phase-4--evaluation-harness) | Evaluation harness | 1–2 weeks |
@@ -87,44 +87,54 @@ button nobody tested.
 
 ---
 
-## Phase 1 — Data pipeline
+## Phase 1 — Data pipeline ✅
 
 *Goal: raw text → memory-mapped token shards, reproducibly.*
+
+**Status: complete.** The full pipeline runs end-to-end on TinyShakespeare:
+`make data`. First measurements are in [docs/results.md](docs/results.md).
 *See [docs/data-and-storage.md](docs/data-and-storage.md).*
 
 ### Acquisition
 
-- [ ] `data/` layout: `raw/`, `interim/`, `processed/` — all gitignored
-- [ ] Download TinyShakespeare (Stage 0) and TinyStories (Stage 1)
-- [ ] `data/raw/MANIFEST.json`: url, sha256, size, licence, retrieval date
-- [ ] `data/LICENSES.md` — before redistributing anything
+- [x] `data/` layout: `raw/`, `interim/`, `processed/` — gitignored via `dir/*` so the manifest negation still works
+- [x] `REGISTRY` + `fetch()` with checksum verification; TinyShakespeare fetched
+- [ ] Fetch TinyStories (Stage 1) — ~2GB, run on your own machine
+- [x] `data/raw/MANIFEST.json`: url, sha256, size, licence, retrieval date — written on cache hits too
+- [x] `data/LICENSES.md` — written before downloading anything
 
 ### Curation (DuckDB + Parquet)
 
-- [ ] Convert raw → Parquet
-- [ ] Corpus statistics notebook: length distribution, vocab coverage, character sets
-- [ ] Exact-duplicate removal; near-duplicate detection (MinHash) — report how much there was
-- [ ] Quality filters (length bounds, encoding errors, boilerplate); log rejection counts per filter
-- [ ] Deterministic train/val/test split by document hash — **never random, never by line**
-- [ ] Verify no leakage across the split (duplicate documents landing on both sides)
+- [x] Convert raw → Parquet (zstd, typed)
+- [x] `corpus_stats()` — DuckDB over Parquet: counts, byte totals, length quantiles, duplicate counts
+- [x] Exact dedup + MinHash near-duplicate detection with banded LSH and union-find grouping
+- [x] Quality filters with per-filter rejection accounting in `CurationReport`
+- [x] Split by content hash — stable under corpus growth, duplicates cannot straddle
+- [x] `check_leakage()`; asserted in the pipeline and in tests
 
 ### Tokenizer
 
-- [ ] Character-level tokenizer first — unblocks Phase 2/3 immediately
-- [ ] Byte-level BPE from scratch: train, encode, decode, save/load
-- [ ] Round-trip test over random Unicode, including emoji and CJK
-- [ ] Validate token-for-token against Hugging Face `tokenizers` on a fixed corpus
-- [ ] Train vocabs at 2k / 4k / 8k / 16k; record compression ratio (bytes per token) for each
-- [ ] Decide the default vocab — remember the embedding-budget maths in [Decision 4](docs/decisions.md#4-tokenizer)
+- [x] `CharTokenizer` — unblocks Phase 2/3 immediately
+- [x] `ByteBPETokenizer` from scratch — incremental pair counts, deterministic tie-breaking, GPT-2 pre-tokenization
+- [x] Round-trip exact over emoji, CJK, control chars, and 200 random-Unicode fuzz cases
+- [x] Validated against a naive reference trainer **and** encoder (byte-identical), plus a compression comparison against Hugging Face
+- [x] Vocab sweep 256→8192 with bytes/token recorded — [R1 in results.md](docs/results.md)
+- [x] Provisional: **2,048–4,096**. 4k→8k buys 8.4% compression for 1.57M embedding params — a bad trade at 10M total. Re-decide on TinyStories
 
 ### Training shards
 
-- [ ] Tokenize corpus → `uint16` `.bin` shards + `meta.json` (vocab size, dtype, token counts, tokenizer hash)
-- [ ] `np.memmap` DataLoader: random offsets, configurable `seq_len`/`batch_size`
-- [ ] **Profile the loader** — on CPU it will likely be the bottleneck, not the matmuls
-- [ ] Assert reproducibility: same seed ⇒ identical batch sequence
+- [x] `uint16` shards + `meta.json` with vocab, dtype, counts, tokenizer fingerprint, **and utf8_bytes for BPB**
+- [x] `BatchSampler`: length-weighted shard choice, random offsets, plus `sequential()` for evaluation
+- [x] `throughput()` — 19.4M tokens/sec in this container; **re-measure on your laptop against a 2GB shard**
+- [x] Same seed ⇒ identical batches, asserted in tests
 
-**Exit criterion:** one command turns a fresh checkout into training shards; token counts and hashes are recorded; the loader's throughput is measured.
+Also delivered:
+
+- [x] Synthetic shards **require** a provenance tag at write time — wired directly into `safety.GeneratedDataQuarantined`
+- [x] Mixing two tokenizers in one corpus directory is refused rather than silently producing meaningless ids
+- [x] `docs/results.md` started, with the vocab sweep and curation report
+
+**Exit criterion:** ✅ `make data` turns a fresh checkout into training shards; counts, hashes and throughput all recorded.
 
 ---
 

@@ -1,7 +1,10 @@
-# Data — never commit corpora or derived artefacts
-data/raw/
-data/interim/
-data/processed/
+# Data — never commit corpora or derived artefacts.
+# Note the /* form: git cannot re-include a file underneath an *excluded
+# directory*, so `data/raw/` + `!data/raw/MANIFEST.json` would silently drop the
+# manifest. Excluding the directory's contents instead keeps the negation live.
+data/raw/*
+data/interim/*
+data/processed/*
 !data/raw/MANIFEST.json
 !data/LICENSES.md
 

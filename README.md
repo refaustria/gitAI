@@ -49,6 +49,8 @@ small-model, narrow-corpus target rather than a general-purpose one.
 make setup     # uv venv + dev install + pre-commit hooks
 make test      # 96 tests, CPU-only, a few seconds
 make demo      # train XOR with the hand-written engine — no PyTorch involved
+make data      # fetch -> curate -> tokenize -> shards (TinyShakespeare)
+make data-sweep # vocabulary size vs compression
 make bench     # measure YOUR laptop (needs: uv pip install -e ".[train]")
 make halt      # stop a running improvement loop
 ```
@@ -78,19 +80,26 @@ Read in this order:
 ```
 src/gitai/autograd/    hand-written reverse-mode autograd on NumPy (Phase 0)
 src/gitai/safety/      halt switch, budget, path guard, lineage, invariant gate
+src/gitai/tokenizer/   char + byte-level BPE, both written from scratch
+src/gitai/data/        acquisition, DuckDB/Parquet curation, shards, memmap loader
+scripts/prepare_data.py  the whole data pipeline, end to end
 scripts/benchmark.py   measure your hardware — run this first
 scripts/halt.py        operator stop button
-tests/                 96 tests: gradient checks, and adversarial safety tests
+tests/                 206 tests: gradient checks, tokenizer fuzzing, adversarial safety
 ```
 
 ## Status
 
-**Phase 0 complete.** The autograd engine works (`make demo` trains XOR with no
-framework underneath it), 96 tests pass, CI is green on 3.11 and 3.12.
+**Phases 0 and 1 complete.** 206 tests pass, ruff clean, CI green on 3.11 and 3.12.
 
-The constraint layer for the Phase 8 loop is also built — deliberately early.
-Brakes before engine: a stop button retrofitted to a running loop is a stop
-button nobody tested.
+- The autograd engine works — `make demo` trains XOR with no framework underneath it.
+- The data pipeline runs end to end — `make data` goes from a URL to
+  memory-mapped training shards, with provenance, curation accounting and a
+  leakage check.
+- The constraint layer for the Phase 8 loop is built, deliberately early.
+  Brakes before engine.
 
-**Next:** run `make bench` on your own laptop to fill in
-`docs/hardware-baseline.md`, then Phase 1 (data pipeline).
+First measurements are in [docs/results.md](docs/results.md).
+
+**Next:** Phase 2 — the transformer, built one rung at a time. Also outstanding:
+`make bench` on your own laptop to fill in `docs/hardware-baseline.md`.

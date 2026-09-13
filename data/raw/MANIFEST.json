@@ -1,0 +1,17 @@
+{
+  "sources": {
+    "tinyshakespeare": {
+      "actual_bytes": 1115394,
+      "description": "~1MB of Shakespeare. The smoke test: trains in minutes, proves the loop works.",
+      "expected_bytes": 1115394,
+      "licence": "Public domain (Shakespeare); compilation MIT (karpathy/char-rnn)",
+      "local_path": "tinyshakespeare.txt",
+      "name": "tinyshakespeare",
+      "retrieved_at": "2026-09-13T13:47:12+00:00",
+      "sha256": "86c4e6aa9db7c042ec79f339dcb96d42b0075e16b8fc2e86bf0ca57e2dc565ed",
+      "stage": 0,
+      "url": "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
+    }
+  },
+  "version": 1
+}
