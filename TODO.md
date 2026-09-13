@@ -359,6 +359,9 @@ trustworthy eval, and a measured noise floor before any of this means anything.
 - [ ] Runbook: how to start it, how to stop it, what to check on
 - [ ] OS-level isolation for long runs — container, unprivileged user, cgroup limits
       (the Python guards are not a security boundary; see constitution.md)
+- [ ] Pin thread counts per subprocess — concurrent torch runs each claim every
+      core and thrash; measured in this project as a 2-minute run stretching past
+      20 while three processes competed for 4 cores
 - [ ] Dashboard or digest so an unattended run is legible the next morning
 
 **Exit criterion:** the loop runs unattended for its full budget, stops cleanly
@@ -389,6 +392,7 @@ Collected failure modes, written down now so they're recognisable later.
 | **Provenance loss** — synthetic data mixed into the corpus untagged, permanently | `GeneratedDataQuarantined`; tag at generation time |
 | **A loop that logs only its wins** — the rejections were the dataset | Lineage records rejections with reasons |
 | **`except Exception` swallowing a stop request** | `HaltRequested` derives from `BaseException` |
+| **Concurrent torch processes fight over cores** — each grabs all of them, so N runs on N cores is ~N× slower than serial, not equal | `OMP_NUM_THREADS` / `torch.set_num_threads` per process; matters most for the Phase 8 loop, which must not overlap its own evaluations |
 
 ---
 
