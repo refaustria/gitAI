@@ -93,25 +93,29 @@ make halt      # stop a running improvement loop
 
 Read in this order:
 
-1. **[TODO.md](TODO.md)** — the phased roadmap. The working checklist.
-2. **[docs/decisions.md](docs/decisions.md)** — the fundamental decisions:
+1. **[docs/findings.md](docs/findings.md)** — **start here.** What the project
+   found, what it got wrong, and what none of it establishes.
+2. **[TODO.md](TODO.md)** — the phased roadmap. The working checklist.
+3. **[docs/decisions.md](docs/decisions.md)** — the fundamental decisions:
    technology, infrastructure, tooling, storage. Each with options, trade-offs,
    a recommendation, and a status.
-3. **[docs/data-and-storage.md](docs/data-and-storage.md)** — corpus strategy and
+4. **[docs/data-and-storage.md](docs/data-and-storage.md)** — corpus strategy and
    the four distinct storage problems (this is where the "database" question is
    answered).
-4. **[docs/evaluation.md](docs/evaluation.md)** — how we measure, and the research
+5. **[docs/evaluation.md](docs/evaluation.md)** — how we measure, and the research
    methodology that makes results mean something.
-5. **[docs/self-improvement.md](docs/self-improvement.md)** — what self-improvement
+6. **[docs/self-improvement.md](docs/self-improvement.md)** — what self-improvement
    can and cannot mean at this scale, the loop design, and model collapse as the
    research question.
-6. **[docs/constitution.md](docs/constitution.md)** — the three axioms, as
+7. **[docs/constitution.md](docs/constitution.md)** — the three axioms, as
    invariants enforced on the loop rather than values taught to the model.
-7. **[docs/interpretability.md](docs/interpretability.md)** — how to see what the
+8. **[docs/interpretability.md](docs/interpretability.md)** — how to see what the
    model is actually doing (there is no reasoning trace; there is something better).
-8. **[docs/lab-notebook.md](docs/lab-notebook.md)** — experiments, each with its
+9. **[docs/lab-notebook.md](docs/lab-notebook.md)** — experiments, each with its
    prediction recorded *before* the result.
-9. **[docs/adr/](docs/adr/)** — Architecture Decision Records.
+10. **[docs/runbook.md](docs/runbook.md)** — operating the improvement loop, and
+    [docs/model-card.md](docs/model-card.md) for the trained artefact.
+11. **[docs/adr/](docs/adr/)** — Architecture Decision Records.
 
 ## Layout
 
