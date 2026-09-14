@@ -124,6 +124,35 @@ class TestComparison:
         maximising = compare_groups(low, high, 0.01, lower_is_better=False)
         assert "scored_high better" in maximising.verdict
 
+    def test_three_seeds_per_arm_cannot_reach_significance(self):
+        """A permutation test over 3v3 enumerates C(6,3)=20 splits, so the
+        smallest possible p-value is 2/20 = 0.10. Reporting such a comparison as
+        "not significant" would be an arithmetic property of the sample size
+        masquerading as a null result — so it is reported as underpowered."""
+        a = SeedGroup("control", (2.03, 2.04, 2.05))
+        b = SeedGroup("replace", (2.33, 2.35, 2.37))
+        comparison = compare_groups(a, b, noise_floor=0.004)
+        assert comparison.underpowered
+        assert comparison.min_achievable_p == pytest.approx(0.1)
+        assert "UNDERPOWERED" in comparison.verdict
+        assert "control better" in comparison.verdict
+        assert comparison.effect_in_noise_units > 50
+
+    def test_five_seeds_per_arm_can_reach_significance(self):
+        """2/C(10,5) = 0.0079, so five seeds per arm clears the 0.05 bar."""
+        a = SeedGroup("control", (2.03, 2.04, 2.05, 2.06, 2.07))
+        b = SeedGroup("replace", (2.33, 2.35, 2.37, 2.39, 2.41))
+        comparison = compare_groups(a, b, noise_floor=0.004)
+        assert not comparison.underpowered
+        assert "UNDERPOWERED" not in comparison.verdict
+        assert "control better" in comparison.verdict
+
+    def test_noise_floor_veto_outranks_the_underpowered_warning(self):
+        """A tiny effect is no effect regardless of how many seeds there are."""
+        a = SeedGroup("a_group", (1.0000, 1.0001, 1.0002))
+        b = SeedGroup("b_group", (1.0003, 1.0004, 1.0005))
+        assert "below the noise floor" in compare_groups(a, b, noise_floor=0.05).verdict
+
     def test_separated_but_tiny_effect_is_still_rejected(self):
         """Statistically significant yet below the noise floor: the noise-floor
         check must veto, or you publish an artefact of a too-small sample."""

@@ -120,16 +120,48 @@ class Comparison:
         return abs(self.difference) / self.noise_floor if self.noise_floor else float("inf")
 
     @property
-    def verdict(self) -> str:
-        if self.effect_in_noise_units < 1.0:
-            return "below the noise floor — no effect"
-        if self.p_value > 0.05:
-            return f"not significant (p={self.p_value:.3f})"
+    def min_achievable_p(self) -> float:
+        """The smallest p-value this sample size can produce.
+
+        A permutation test enumerates every way of splitting the pooled
+        observations, so with n_a and n_b seeds there are C(n_a+n_b, n_a) splits
+        and the two most extreme ones give p = 2/C. With three seeds per arm that
+        floor is 2/20 = 0.10 — **the test cannot reach p < 0.05 at all**.
+
+        Without this, a 75x-noise effect gets reported as "not significant",
+        which is not a null result but an arithmetic property of the sample size.
+        """
+        if self.a.n < 1 or self.b.n < 1:
+            return 1.0
+        return min(1.0, 2 / math.comb(self.a.n + self.b.n, self.a.n))
+
+    @property
+    def underpowered(self) -> bool:
+        """True when no possible outcome could reach p < 0.05."""
+        return self.min_achievable_p > 0.05
+
+    @property
+    def winner(self) -> str:
         # difference = b.mean - a.mean, so difference > 0 means b scored HIGHER.
         # When lower is better, a higher score means a wins.
         b_scored_higher = self.difference > 0
-        better = self.a.label if b_scored_higher == self.lower_is_better else self.b.label
-        return f"{better} better (p={self.p_value:.3f}, {self.effect_in_noise_units:.1f}x noise)"
+        return self.a.label if b_scored_higher == self.lower_is_better else self.b.label
+
+    @property
+    def verdict(self) -> str:
+        if self.effect_in_noise_units < 1.0:
+            return "below the noise floor — no effect"
+        if self.underpowered:
+            return (
+                f"{self.winner} better by {self.effect_in_noise_units:.1f}x noise, but "
+                f"UNDERPOWERED: n={self.a.n}v{self.b.n} cannot reach p<0.05 "
+                f"(floor p={self.min_achievable_p:.2f})"
+            )
+        if self.p_value > 0.05:
+            return f"not significant (p={self.p_value:.3f})"
+        return (
+            f"{self.winner} better (p={self.p_value:.3f}, {self.effect_in_noise_units:.1f}x noise)"
+        )
 
     def __str__(self) -> str:
         return (
