@@ -22,7 +22,7 @@ research. Rationale for the choices below lives in
 | [5](#phase-5--research) | Research | first result |
 | [6](#phase-6--scale-up) | Scale-up (optional) | 1–2 weeks |
 | [7](#phase-7--inference--write-up) | Inference & write-up | 1–2 weeks |
-| [8](#phase-8--the-self-improvement-loop) | The self-improvement loop | 2–4 weeks |
+| [8](#phase-8--the-self-improvement-loop) | The self-improvement loop | built, demo pending |
 
 ---
 
@@ -345,8 +345,11 @@ Phase 5 runs the manual, single-variable version of that; Phase 8 automates it.
 *Goal: the loop from [self-improvement.md](docs/self-improvement.md), running
 unattended and bounded, answering question F.*
 
-**Prerequisite:** Phase 7 complete. There must be a model worth improving, a
-trustworthy eval, and a measured noise floor before any of this means anything.
+**Status: the loop is built and tested; the demonstration run is still to come.**
+Its central design question was answered first, by R6-R8 — which is what Phase 5
+was for. The strongest expression of that: the loop *cannot* propose a
+synthetic-only corpus, because `SearchSpace` refuses to contain the regime R8
+measured collapsing to 4.53 BPB.
 
 ### Already built (Phase 0)
 
@@ -355,19 +358,20 @@ trustworthy eval, and a measured noise floor before any of this means anything.
 
 ### The loop
 
-- [ ] Declare the search space explicitly — the loop may only propose from inside it
-- [ ] `propose()` — sample a candidate config / data mixture
-- [ ] `generate()` — incumbent produces synthetic data, **tagged with provenance at birth**
-- [ ] `filter()` — quality, dedup, length; rejects retained, never deleted
-- [ ] **Always mix real data into every generation's corpus** — R8: this is what makes the loop robust to the sampling regime, and it is nearly free
-- [ ] **Record `real_data_fraction` and `corpus_stats` in the gate context** — `CorpusDiversityFloor` needs both to judge correctly
-- [ ] `train()` — from the incumbent checkpoint, bounded steps
-- [ ] `evaluate()` — held-out BPB + probes, ≥3 seeds
-- [ ] `gate()` — wire in `InvariantSuite`; fail-closed
-- [ ] `record()` — append to lineage on **both** promotion and rejection, with reasons
-- [ ] Halt and budget checked at every boundary
-- [ ] Wrap the whole loop in `deny_network()`
-- [ ] Checkpoint rotation that never deletes a parent
+- [x] `SearchSpace` — declared, bounded, and **it cannot contain the collapse regime**: R8 encoded as a construction-time refusal rather than something the gate must catch
+- [x] `SearchSpace.sample()` — random search over the declared grid, validated on the way *in* as well as out
+- [x] `generate()` — incumbent's own output, tagged at birth
+- [ ] `filter()` — quality, dedup, length; rejects retained, never deleted (not yet wired into the loop)
+- [x] **Real data in every corpus** — enforced by the search space's `min_real_fraction`, not by convention
+- [x] `real_data_fraction` and `corpus_stats` passed into every gate call to judge correctly
+- [x] `train()` — warm-started from the incumbent, bounded steps
+- [x] `evaluate()` — held-out BPB, seeds configurable
+- [ ] Wire the capability probes into the loop's evaluation
+- [x] `gate()` — `InvariantSuite`, fail-closed
+- [x] `record()` — both outcomes, with the invariant that refused
+- [x] Halt and budget checked at every boundary, before and after each phase
+- [x] Whole loop wrapped in `deny_network()`
+- [x] Promoted models are never overwritten or deleted — asserted by test
 
 ### The experiment
 
@@ -381,13 +385,13 @@ trustworthy eval, and a measured noise floor before any of this means anything.
 
 ### Operational
 
-- [ ] Runbook: how to start it, how to stop it, what to check on
+- [x] [docs/runbook.md](docs/runbook.md) — start, stop, the morning check, and a symptom table
 - [ ] OS-level isolation for long runs — container, unprivileged user, cgroup limits
       (the Python guards are not a security boundary; see constitution.md)
 - [ ] Pin thread counts per subprocess — concurrent torch runs each claim every
       core and thrash; measured in this project as a 2-minute run stretching past
       20 while three processes competed for 4 cores
-- [ ] Dashboard or digest so an unattended run is legible the next morning
+- [x] `scripts/report_loop.py` — the morning digest, lineage integrity checked before any number is interpreted
 
 **Exit criterion:** the loop runs unattended for its full budget, stops cleanly
 on exhaustion, never promotes a regression, and produces a lineage that verifies.
