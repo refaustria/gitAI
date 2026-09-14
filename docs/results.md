@@ -68,6 +68,128 @@ in Phase 5.
 
 ---
 
+## R7 — Sampling temperature selects the collapse failure mode  ⭐
+
+**Date:** 2026-09-14 · **Pre-registered:** [lab-notebook E4](lab-notebook.md#e4--does-sampling-temperature-select-the-collapse-failure-mode)
+· **Reproduce:** `make collapse-temps` · 27 runs, ~35 min
+
+The `replace` arm only, at four sampling regimes, 3 generations × 3 seeds each.
+Everything else identical to [R6](#r6--model-collapse-does-self-training-degrade-a-small-lm--the-headline-result),
+so the sampling regime is the single independent variable. `control` never
+generates, so it is regime-independent and reused (2.046 at generation 3).
+
+### Held-out BPB on real data
+
+| regime | gen 1 | gen 2 | gen 3 | drift | vs control |
+|---|---:|---:|---:|---:|---:|
+| **T0.5** | 2.6850 | 3.7643 | **4.5339** | +1.849 | **+2.49** (622× noise) |
+| T1.0 + top-k 40 | 2.6805 | 3.0093 | 3.2325 | +0.552 | +1.19 (297× noise) |
+| T0.8 | 2.2298 | 2.4870 | 2.8602 | +0.630 | +0.81 (203× noise) |
+| T1.0 | 2.1995 | 2.2955 | 2.3673 | +0.168 | +0.32 (80× noise) |
+
+### The finding
+
+> **It is not temperature. It is how much of the distribution's tail survives
+> sampling.**
+
+Top-k 40 at temperature 1.0 degrades the model *more* than temperature 0.8 does
+(+1.19 vs +0.81 against control), despite leaving the temperature untouched.
+Truncation and temperature act through the same channel — both discard the tails
+at generation time — and the resulting collapse tracks that, not the temperature
+parameter itself.
+
+### The mechanism, measured
+
+| regime | distinct_3 (g1) | vocabulary (g1) | training loss (g2) | BPB (g3) |
+|---|---:|---:|---:|---:|
+| T0.5 | 0.0375 | **36.9%** | **1.04** | 4.5339 |
+| T1.0 + top-k 40 | 0.3556 | 46.7% | 2.91 | 3.2325 |
+| T0.8 | 0.3746 | 80.6% | 2.88 | 2.8602 |
+| T1.0 | 0.7166 | **87.4%** | **4.44** | 2.3673 |
+
+**Vocabulary coverage of the generated corpus at generation 1 predicts
+generation-3 BPB monotonically.** That is an early-warning signal: it is
+measurable one full generation before the damage is visible in held-out loss,
+and it is cheap — no evaluation set required, just a token count over the corpus
+the loop already produced.
+
+At T0.5 the model emits **11.4% of its vocabulary** by generation 2 and scores
+4.53 BPB — **worse than the bigram baseline of 3.24**. A 1M-parameter
+transformer, trained on its own output for three rounds, ends up worse than a
+context-free lookup table. Even top-k 40 lands at 3.23, essentially *at* the
+bigram floor.
+
+### Lower training loss predicts worse real performance
+
+| regime | training loss (g2) | held-out BPB (g3) |
+|---|---:|---:|
+| T0.5 | 1.04 | 4.53 |
+| T1.0 | 4.44 | 2.37 |
+
+The regime that fits its training data **four times better** ends up **twice as
+bad** on real text. Across the extremes the relationship is a clean inversion.
+(It is not a perfect ranking: T0.8 and T1.0+top-k sit at 2.88 and 2.91 training
+loss but 2.86 and 3.23 BPB, so training loss does not resolve the middle.)
+
+**The operational consequence** for the Phase 8 loop is direct: a promotion gate
+reading training loss would rank these regimes **exactly backwards** and would
+select the catastrophic one. The held-out gate that
+[constitution.md](constitution.md) requires is not a nicety — it is the only
+thing between the loop and confidently optimising itself into uselessness.
+
+### The counterintuitive practical lesson
+
+The instinct when building a self-training loop is to generate with low
+temperature or top-k, because that produces "higher quality" text — more
+grammatical, more on-distribution, better to read. **That instinct is exactly
+backwards.** The cleaner the samples look, the faster the model dies. Sampling
+that preserves the tails produces worse-looking text and a far healthier
+lineage.
+
+### Prediction scorecard — 3 of 3 correct
+
+| # | Prediction | Outcome |
+|---|---|---|
+| 1 | diversity falls with temperature (high confidence) | **Confirmed**, dramatically: vocabulary 87% → 37% → 11% |
+| 2 | low temperature degrades faster (60% confidence) | **Confirmed**, by far more than expected (+2.49 vs +0.32) |
+| 3 | training loss lower at T0.5 | **Confirmed**: 1.04 vs 4.44 |
+
+A marked contrast with [R6](#r6--model-collapse-does-self-training-degrade-a-small-lm--the-headline-result),
+where three of five were wrong. The predictions improved because R6's data
+informed them — which is what iteration is for. Worth not over-reading: the
+mechanism was already half-identified before these predictions were written, so
+this is less impressive than 3/3 sounds.
+
+### Amendment to R6
+
+R6 recorded E3's prediction 5 — "training loss falls while held-out BPB rises" —
+as **falsified**. That was correct for the regime tested and **too general as
+stated**. The accurate version: it is *false at temperature 1.0 and emphatically
+true at temperature 0.5*. The prediction was not wrong, it was **regime-
+dependent**, and R6's scorecard has been amended to say so.
+
+### Limitations
+
+- **Three seeds**, so the permutation test cannot certify these (p floor 0.10).
+  The effects are 80–622× the noise floor, so the conclusions rest on effect
+  size — but the caveat stands.
+- **One weak parent.** A 500-step 1M-parameter model. A stronger generator would
+  produce a better corpus at every temperature and might move the whole curve.
+- **Three generations.** T0.5 is still falling steeply at generation 3; where it
+  settles is unknown.
+- **`replace` only.** Whether accumulation rescues a low-temperature lineage is
+  untested and is the obvious next question.
+
+### Follow-ups
+
+1. **Does accumulation rescue T0.5?** If keeping real data prevents the
+   catastrophic case, that is the practically important result.
+2. **Vocabulary coverage as a live gate** — wire it into `NoRegression` as an
+   early-warning invariant, since it fires a generation before BPB does.
+3. Five seeds; more generations; a stronger parent.
+
+---
+
 ## R6 — Model collapse: does self-training degrade a small LM?  ⭐ the headline result
 
 **Date:** 2026-09-14 · **Pre-registered:** [lab-notebook E3](lab-notebook.md#e3--does-a-self-training-loop-collapse-and-does-accumulation-prevent-it)
@@ -145,7 +267,7 @@ thing this run produced:
 | 2 | replace degrades monotonically, +0.05–0.30 by gen 3 | **Confirmed**, magnitude slightly exceeded (+0.3212). Monotonic in all three seeds |
 | 3 | accumulate within ~0.02 of control | **Wrong.** +0.079 at gen 1 rising to +0.141. Off by ~7× |
 | 4 | diversity falls before loss rises | **Falsified.** Diversity is flat or rising throughout |
-| 5 | training loss falls while held-out rises | **Falsified.** Replace's training loss is *higher* than control's and rising |
+| 5 | training loss falls while held-out rises | **Falsified at this temperature** — replace's training loss is *higher* than control's. **Amended by [R7](#r7--sampling-temperature-selects-the-collapse-failure-mode-):** the prediction is regime-dependent, and is emphatically true at temperature 0.5 (training loss 1.04, BPB 4.53) |
 
 Predictions 4 and 5 were both downstream of assuming the narrowing mechanism.
 Getting them wrong is what located the actual mechanism — which is the argument

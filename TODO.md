@@ -295,7 +295,9 @@ Phase 5 runs the manual, single-variable version of that; Phase 8 automates it.
 - [ ] Plots (tables only)
 - [x] Three falsified predictions recorded in full, including the one that mattered most
 - [x] It did -- the mechanism is error accumulation, not distribution narrowing
-- [ ] **Temperature sweep** -- does low temperature produce the narrowing signature? The mechanism question, and cheap
+- [x] **Temperature sweep** -- answered: yes, and it is tail truncation rather than temperature per se (R7)
+- [ ] **Does accumulation rescue a low-temperature lineage?** The practically important follow-up
+- [ ] **Wire vocabulary coverage into `NoRegression`** -- it predicts collapse a generation before BPB moves
 - [ ] **Fixed-real-fraction arm** -- separates 'real data helps' from 'less repetition helps'
 - [ ] More generations -- does `replace` plateau or keep falling?
 
@@ -404,6 +406,8 @@ Collected failure modes, written down now so they're recognisable later.
 | **Provenance loss** — synthetic data mixed into the corpus untagged, permanently | `GeneratedDataQuarantined`; tag at generation time |
 | **A loop that logs only its wins** — the rejections were the dataset | Lineage records rejections with reasons |
 | **`except Exception` swallowing a stop request** | `HaltRequested` derives from `BaseException` |
+| **Low-temperature / top-k sampling accelerates collapse** — the "higher quality" instinct is exactly backwards | Preserve the tails when generating training data; watch generated-corpus vocabulary coverage (R7) |
+| **Training loss inversely predicts held-out quality across sampling regimes** — a loop gating on it selects the catastrophic regime | Gate on held-out data the loop cannot influence, never on training loss |
 | **A permutation test with 3 seeds per arm cannot reach p<0.05** — floor is 2/C(6,3)=0.10, so a 10x effect reads "not significant" | `Comparison.underpowered`; use 5 seeds per arm when p-values must mean something |
 | **Changing an error message breaks tests that match on it** — and running only the new test file misses it | Run the whole suite before committing, not the files you touched |
 | **Concurrent torch processes fight over cores** — each grabs all of them, so N runs on N cores is ~N× slower than serial, not equal | `OMP_NUM_THREADS` / `torch.set_num_threads` per process; matters most for the Phase 8 loop, which must not overlap its own evaluations |

@@ -322,7 +322,40 @@ coming true, just at a temperature I did not test.
 
 ### Result
 
-*(filled in when the experiment completes — see [results.md](results.md) R7)*
+Full write-up: [results.md R7](results.md#r7--sampling-temperature-selects-the-collapse-failure-mode-).
+
+**All three predictions correct**, and the central one by a much larger margin
+than expected.
+
+| regime | drift over 3 gens | vocabulary (g1) | training loss (g2) |
+|---|---:|---:|---:|
+| T0.5 | **+1.849** | 36.9% | 1.04 |
+| T1.0 + top-k 40 | +0.552 | 46.7% | 2.91 |
+| T0.8 | +0.630 | 80.6% | 2.88 |
+| T1.0 | +0.168 | 87.4% | 4.44 |
+
+**The refinement I did not predict, and the better finding:** it is not
+temperature. Top-k 40 *at temperature 1.0* degrades the model more than
+temperature 0.8 does, without touching the temperature. Truncation and
+temperature act through one channel — how much of the distribution's tail
+survives sampling — and collapse tracks that, not the temperature parameter.
+
+**Practically useful:** generated-corpus vocabulary coverage at generation 1
+predicts generation-3 BPB monotonically. It is an early-warning signal available
+a full generation before the damage shows in held-out loss, and it costs a token
+count over a corpus the loop already has.
+
+**Amends E3.** Prediction 5 there ("training loss falls while held-out rises")
+was recorded as falsified. It was *regime-dependent*, not false — true at T0.5,
+false at T1.0. R6's scorecard now says so.
+
+**Honest note on the 3/3.** The mechanism was already half-identified from R6
+before these predictions were written, so this is a weaker test of foresight
+than the score suggests. E3's 2/5 on genuinely open questions was the more
+informative experiment.
+
+**Next:** does accumulation rescue a low-temperature lineage? If keeping real
+data prevents the catastrophic case, that is the practically important result.
 
 ---
 

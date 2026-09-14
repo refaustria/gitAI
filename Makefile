@@ -1,4 +1,4 @@
-.PHONY: help setup test test-fast lint fmt typecheck bench demo data data-sweep train inspect eval report noise-floor collapse halt clean
+.PHONY: help setup test test-fast lint fmt typecheck bench demo data data-sweep train inspect eval report noise-floor collapse collapse-temps halt clean
 
 help:
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -49,6 +49,11 @@ noise-floor:  ## train 5 seeds of one config to measure the significance thresho
 
 collapse:  ## run the model-collapse experiment (Phase 5, ~35 min)
 	.venv/bin/python scripts/collapse_experiment.py --generations 3 --seeds 3 --steps 500
+	.venv/bin/python scripts/analyse_collapse.py
+
+collapse-temps:  ## temperature sweep: does the sampling regime select the failure mode?
+	for t in 0.5 0.8; do .venv/bin/python scripts/collapse_experiment.py --generations 3 --seeds 3 --steps 500 --arms replace --temperature $$t; done
+	.venv/bin/python scripts/collapse_experiment.py --generations 3 --seeds 3 --steps 500 --arms replace --temperature 1.0 --top-k 40
 	.venv/bin/python scripts/analyse_collapse.py
 
 bench:  ## measure this machine (needs the train extra)
