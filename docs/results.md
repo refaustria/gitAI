@@ -68,103 +68,138 @@ in Phase 5.
 
 ---
 
-## R10 — The loop works, and rediscovers its own constraints
+## R10 — The loop matches a compute-matched control, and rediscovers its own constraints
 
-**Date:** 2026-09-14 · **Reproduce:** `python scripts/run_loop.py --iterations 25`
-· 25 iterations, 11.4 min, plus a compute-matched control
+**Date:** 2026-09-14 · **Reproduce:** `python scripts/loop_vs_control.py --run --seeds 0 1 2`
+· 3 seeds × (15 iterations + two controls)
 
-The first real run of the Phase 8 loop: an under-trained incumbent (150 steps),
-25 iterations of propose → generate → filter → train → evaluate → gate → record,
-with promotion gated on held-out real data the loop cannot influence.
+**This result previously claimed the loop beat a compute-matched control by 4.7×
+the noise floor. That claim was wrong**, for three independent reasons, all
+found after it was written. What follows is the corrected version; the original
+is in git history and the failures are written up in
+[evaluation.md](evaluation.md) because each one is more transferable than the
+result itself.
 
-### It improves, and it beats a compute-matched control
+### The loop does not beat a step-matched control
 
-| | val BPB |
+Every number below is measured on the **`test` split, which neither the loop nor
+the controls ever read** — not the `val` split the loop gates on. All three seeds
+stopped on their iteration count, not the wall clock.
+
+| seed | loop *reports* | loop (test) | acc control (test) | tot control (test) |
+|---:|---:|---:|---:|---:|
+| 0 | 1.8460 | 1.8992 | 1.9089 | 1.9438 |
+| 1 | 1.8612 | 1.9028 | 1.9130 | 1.9429 |
+| 2 | 1.8824 | 1.9200 | **1.9011** | 1.9178 |
+
+Against the **accumulated-steps control** — plain training for exactly the steps
+the loop kept — the loop is **indistinguishable**:
+
+> acc 1.9077 ± 0.0061 · loop 1.9074 ± 0.0111 · **difference −0.0003, below the
+> 0.0040 noise floor — no effect.**
+
+It loses outright on seed 2. Against the **total-spent control** — plain training
+for every step the loop burned, rejected candidates included — the loop is ahead
+by 0.0275 (6.9× noise), but that comparison flatters it: the total-spent control
+trains 3150 steps on 373k tokens, which is **17.3 epochs**, and it is visibly
+overtraining. Beating an overtrained baseline is a statement about the step
+budget, not about search.
+
+With 3 seeds per arm a permutation test cannot go below p=0.10, so neither
+comparison is significant; see the underpowered-test trap in
+[TODO.md](../TODO.md).
+
+**The honest summary: the loop's selection is worth roughly what it costs — it
+finds where to stop, and nothing more than that.** Its advantage over the naive
+long run is avoiding overtraining, which a learning-rate schedule and early
+stopping also achieve, far more cheaply.
+
+### The loop's own reported number is optimistic by 11× the noise floor
+
+| | mean |
 |---|---:|
-| starting incumbent (150 steps) | ~2.17 |
-| **loop, 25 iterations** (2150 accumulated steps) | **1.8581** |
-| plain training, 2150 steps — *the control* | 1.8771 |
-| **difference** | **+0.0190 = 4.7× the noise floor** |
+| loop's reported "best held-out BPB" (val) | 1.8632 |
+| the same models on `test` | 1.9073 |
+| **gap** | **+0.0441 (per seed +0.0532, +0.0416, +0.0376)** |
 
-The control matters more than the headline. Without it the loop's improvement
-proves nothing: its incumbent accumulated 2150 training steps, so "it got
-better" could simply mean "it trained longer". This project's own
-[evaluation.md](evaluation.md) insists on compute-matched rather than
-step-matched comparison, and the first draft of this result did not have one.
+The loop gates promotion on `val_bpb` and then reports the *minimum* `val_bpb`
+over its promotions. That split is held out from training but not from
+selection, and the minimum of a selected set is biased by exactly what the
+selection was worth. **+0.0441 is eleven times the noise floor, and larger than
+any effect this result reports.**
 
-**Caveats on that 0.0190, both real:**
+This is the project's own safety finding
+([R5](#r5--lower-training-loss-predicted-worse-held-out-performance)) one level
+up. Gating on data the loop cannot influence is necessary and was done. It is
+not sufficient: the number you *report* must also be one nothing selected on.
 
-- **n = 1 for each arm.** The difference is 4.7× the measured noise floor, so it
-  is outside plausible seed variance — but a single run against a single run
-  cannot be certified. Multiple seeds are the honest next step.
-- **"Compute-matched" here means training steps, not wall-clock.** The loop took
-  11.4 minutes against roughly 4 for the control, because generation and
-  evaluation are not free. Per unit of *time*, the loop is behind. It buys its
-  advantage with search, and search costs.
+### The loop rediscovered R6–R9 on its own — replicated
 
-### The arc is the right shape
-
-Nine promotions in the first ten iterations (2.17 → 1.86), then **fourteen
-consecutive rejections**, then one further improvement at iteration 24. Overall
-promotion rate 40%.
-
-A loop that plateaus and refuses rather than drifting upward on noise is the
-promotion gate doing exactly its job. Every one of the 15 rejections was
-`no_regression` — the candidate was worse than the incumbent and did not get in.
-
-### The loop rediscovered R6–R9 on its own
+Pooled over 45 iterations across 3 seeds:
 
 | synthetic fraction | rejected |
 |---:|---:|
-| 0% | 4/10 (40%) |
-| 25% | 4/7 (57%) |
-| **50%** | **7/8 (88%)** |
+| 0% | 2/16 (12%) |
+| 25% | 3/13 (23%) |
+| **50%** | **10/16 (62%)** |
 
-Monotonic. **Nobody told the loop that synthetic data hurts.** It found out by
-having its candidates refused, and the rejection pattern reproduces the
-dose-response relationship [R9](#r9--a-little-real-data-does-almost-all-the-work)
-measured directly.
+Monotonic, and cleaner than the single-run version this replaces.
+**Nobody told the loop that synthetic data hurts.** It found out by having its
+candidates refused, and the pattern reproduces the dose-response relationship
+[R9](#r9--a-little-real-data-does-almost-all-the-work) measured directly.
 
-This is the clearest vindication of a design decision made back in
+All 15 rejections across all three seeds were `no_regression` — the candidate
+was worse than the incumbent and did not get in. Promotion rate 67%.
+
+This remains the clearest vindication of a decision made in
 [self-improvement.md](self-improvement.md): *rejections are recorded, not
-discarded, because they are the research data*. A loop that logged only its
-promotions would have produced the same model and none of this.
+discarded, because they are the research data.* A loop that logged only its
+promotions would have produced the same models and none of this table.
 
-### Induction never appeared
+### Induction never appeared — replicated
 
-All 25 iterations scored between **−0.52 and −0.87 bits** — negative throughout,
-never once positive. A negative score means the second copy of a repeated random
-sequence is *harder* to predict than the first.
+All **45** iterations scored between **−0.756 and −0.058 bits**. Never once
+positive, on any seed. A negative score means the second copy of a repeated
+random sequence is *harder* to predict than the first.
 
-So a 1M-parameter model trained on 373k tokens of Shakespeare appears to form
-**no induction circuit at all**, and gets progressively more confused by a long
-run of random tokens instead. That is a concrete data point for
+A 1M-parameter model trained on 373k tokens of Shakespeare appears to form **no
+induction circuit at all**. That is a concrete data point for
 [Decision 12's question D](decisions.md#12-research-question), and held-out loss
-alone would never have surfaced it — which was the argument for having
-capability probes in the first place.
+alone would never have surfaced it — which was the argument for capability
+probes in the first place.
 
-Whether induction emerges at larger scale, more data, or more layers is exactly
-the question worth asking next.
+### What this result got wrong the first time
 
-### Filtering did little here
+Recorded because the failures generalise and the result does not:
 
-The filter removed 0–3% of generated documents per iteration. At temperature
-0.9–1.1 the generated corpora are not degenerate — consistent with
-[R7](#r7--sampling-temperature-selects-the-collapse-failure-mode-), which found
-narrowing only at low temperature or under top-k truncation. The search space
-does not offer those regimes, so the filter had little to do. It would earn its
-place in a space that did.
+1. **It reported a number selected on the gating split** (+0.0441 of bias),
+   having carefully arranged for the gate itself to be uninfluenceable.
+2. **It was not reproducible.** `scripts/run_loop.py` built its incumbent before
+   seeding anything, so identical seeds gave identical *proposals* and different
+   *measurements* — enough at one iteration to flip a promotion into a
+   rejection. The single-seed original cannot be regenerated.
+3. **One seed was truncated by a wall-clock budget** that bound before the
+   iteration count, making machine load an experimental variable.
+4. **The driver was never committed**, so none of it could be audited. It is
+   `scripts/loop_vs_control.py` now.
+
+The first version of this result was a single unreproducible run of an
+unreviewable script, reporting a contaminated metric, against one control that
+was arguably the wrong one. It reached a conclusion that was directionally
+wrong. Three of the four defects were found by re-running it, which is the
+argument for re-running things.
 
 ### Limitations
 
-- **One run, one seed.** Everything above is a single trajectory.
-- **Random search over 18 candidates, 25 draws** — the space was sampled roughly
-  1.4 times over, so late iterations were largely re-testing.
-- **The incumbent was deliberately under-trained** so the loop had headroom.
-  Starting from a converged model would give a very different and probably much
-  duller picture.
-- **The wall-clock comparison is unfavourable** and is not something the
-  step-matched framing should be allowed to hide.
+- **3 seeds per arm cannot reach p<0.05.** 5 would.
+- **The incumbent is deliberately under-trained** so the loop has headroom.
+  Starting from a converged model would look very different and probably duller.
+- **Wall-clock is unfavourable and the step-matched framing hides it.** The loop
+  spends generation and evaluation time the controls do not.
+- **Random search over a small space**, sampled roughly 2.5× over 15 iterations,
+  so late iterations largely re-test.
+- **The `test` split is 3.5k tokens**, small enough that its own sampling error
+  is not negligible at this precision.
 
 ---
 
