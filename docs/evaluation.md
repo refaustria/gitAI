@@ -110,6 +110,40 @@ that is the comparison that answers "which should I actually use?"
 This matters more here than at scale, because your architectural variations
 (depth vs width especially) have very different cost profiles on CPU.
 
+#### Never let wall-clock terminate an experimental arm
+
+There is a trap in the sentence above. Comparing *at* equal wall-clock is sound.
+Letting wall-clock decide *when an arm stops* is not, and the loop experiment
+walked straight into it.
+
+`Budget` bounds iterations, wall-clock and disk, and halts on whichever binds
+first. That is exactly right as a safety property — an unattended loop must stop
+even if an iteration hangs. But in the three-seed loop-vs-control run, the
+1800s wall budget was the binding constraint for seed 0 and the iteration count
+was binding for seed 1. The two seeds therefore ran different procedures:
+
+| seed | stopped because | accumulated steps |
+|---|---|---|
+| 0 | wall-clock budget exhausted (1800s) | 2150 |
+| 1 | completed all iterations | 2350 |
+
+Machine load is now an uncontrolled variable in the treatment arm. Run the same
+seed on an idle machine and it completes; run it next to two other training
+processes and it gets cut short. That is not reproducible, and pooling seeds
+across it means averaging over "how busy the laptop was", which no amount of
+seeding fixes.
+
+The rule: **for an experiment, set `max_wall_seconds` high enough that it never
+binds, and let `max_iterations` be the thing that stops the run.** Wall-clock
+stays in the budget as the backstop it was designed to be. Then assert after the
+fact that every arm stopped for the intended reason — a run that halted on
+wall-clock is not a datapoint, it is a truncated one, and the halt reason is
+recorded in the lineage precisely so this is checkable rather than invisible.
+
+(Note the interaction with the concurrency trap in TODO.md: running experiment
+arms in parallel on a 4-core machine both slows them down *and*, through this
+mechanism, silently changes what they measure.)
+
 ### 4. Pre-register the prediction
 
 Before each experiment, write down in `docs/lab-notebook.md`: the question, what
