@@ -68,6 +68,122 @@ in Phase 5.
 
 ---
 
+## R6 — Model collapse: does self-training degrade a small LM?  ⭐ the headline result
+
+**Date:** 2026-09-14 · **Pre-registered:** [lab-notebook E3](lab-notebook.md#e3--does-a-self-training-loop-collapse-and-does-accumulation-prevent-it)
+· **Reproduce:** `make collapse` · 30 training runs, 15 corpus generations, 34.5 min
+
+Three arms differing **only** in what generation *n* trains on. Each generation
+is a freshly initialised model; what is inherited is the data, not the weights.
+Synthetic corpora are generated unconditionally at temperature 1.0 with no
+truncation, sized to match the real corpus. Every arm is scored on the same
+held-out **real** validation set.
+
+### Held-out BPB on real data (mean ± std, 3 seeds)
+
+| gen | control | accumulate | replace |
+|---:|---:|---:|---:|
+| 1 | 2.0396 ±0.0092 | 2.1187 ±0.0086 | 2.1995 ±0.0144 |
+| 2 | 2.0450 ±0.0081 | 2.1543 ±0.0153 | 2.2955 ±0.0182 |
+| 3 | 2.0461 ±0.0118 | 2.1871 ±0.0054 | 2.3673 ±0.0158 |
+| **drift g1→g3** | **+0.0065** | **+0.0684** | **+0.1678** |
+
+Gap versus control at generation 3: `accumulate` **+0.1410** (35× noise floor),
+`replace` **+0.3212** (80× noise floor).
+
+### The headline
+
+> **Self-training on your own output degrades a small language model,
+> substantially and reproducibly. Accumulating real data alongside synthetic
+> slows the degradation to ~41% of its rate but does not stop it.**
+
+Three independent seeds; `replace` lands at 2.3514 / 2.3676 / 2.3829 at
+generation 3. The effect replicates in magnitude and in per-generation
+increment, not merely in sign.
+
+### But the mechanism is not the one I predicted
+
+This is the part worth reading. **Generated-corpus diversity does not fall — it
+rises.**
+
+| corpus | distinct_1 | distinct_2 | distinct_3 | vocabulary |
+|---|---:|---:|---:|---:|
+| generation 0 | 0.0048 | 0.2918 | 0.7076 | 86.6% |
+| replace gen 1 | 0.0048 | 0.3194 | 0.7166 | 87.4% |
+| replace gen 2 | 0.0048 | **0.3358** | 0.7180 | 87.8% |
+
+Classic model collapse is the distribution **narrowing** — tails disappear,
+diversity drops, the model converges on a confident, wrong mode. None of that is
+happening here. Vocabulary coverage is flat at ~87%, distinct-3 is flat, and
+distinct-2 climbs steadily.
+
+`replace`'s **training loss is higher** than control's (4.35 → 4.61 versus
+3.86 → 4.03), not lower. It is not fitting a narrower distribution more snugly;
+it is struggling with harder data.
+
+**The reading:** at temperature 1.0 with no truncation, a small parent model
+produces text that is a *noisier, higher-entropy* approximation of the real
+distribution — not a narrower one. Each generation trains on a worse model of
+reality and adds its own error. This is **error accumulation**, not mode
+collapse. Both degrade the model; they are different failure modes with
+different signatures.
+
+That suggests a concrete, testable follow-up, and it is the most interesting
+thing this run produced:
+
+> **Sampling temperature likely selects which failure mode you get.** Low
+> temperature or top-k truncation cuts the tails at generation time and should
+> produce the narrowing signature the literature describes; temperature 1.0
+> preserves and compounds entropy and produces noise accumulation. The diversity
+> metrics distinguish the two directly.
+
+### Prediction scorecard — 3 of 5 wrong
+
+| # | Prediction | Outcome |
+|---|---|---|
+| 1 | control flat within 0.0040 | **Marginal.** Drift +0.0065 over 3 generations (1.6× floor). Per-generation ~0.003, inside the floor; cumulative slightly outside |
+| 2 | replace degrades monotonically, +0.05–0.30 by gen 3 | **Confirmed**, magnitude slightly exceeded (+0.3212). Monotonic in all three seeds |
+| 3 | accumulate within ~0.02 of control | **Wrong.** +0.079 at gen 1 rising to +0.141. Off by ~7× |
+| 4 | diversity falls before loss rises | **Falsified.** Diversity is flat or rising throughout |
+| 5 | training loss falls while held-out rises | **Falsified.** Replace's training loss is *higher* than control's and rising |
+
+Predictions 4 and 5 were both downstream of assuming the narrowing mechanism.
+Getting them wrong is what located the actual mechanism — which is the argument
+for pre-registration in one table.
+
+### Limitations, stated plainly
+
+- **Underpowered by design.** Three seeds per arm means a permutation test
+  enumerates C(6,3)=20 splits and cannot produce p < 0.10. The conclusions rest
+  on effect sizes of 35–80× the measured noise floor, not on p-values. Five
+  seeds per arm is the minimum for significance; this correction is now in
+  `Comparison.underpowered`.
+- **`accumulate` dilutes the real data.** "Real + all synthetic" means the real
+  share falls 50% → 33% → 25% as the pool grows. So this arm tests a *shrinking
+  fraction* of real data, not a fixed one — a weaker claim than the accumulation
+  hypothesis proper. A fourth arm holding the real fraction constant is the
+  honest test and was **not** run.
+- **One corpus, one model size, one temperature, three generations.** Nothing
+  here establishes where the trajectory goes at generation 10, or whether the
+  same holds on TinyStories or at 10M parameters.
+- **The parent is weak.** A 500-step, 1M-parameter model is a poor generator. A
+  stronger parent would produce a better corpus and plausibly a different
+  mechanism — quite possibly the narrowing one.
+
+### Follow-ups, in priority order
+
+1. **Temperature sweep** (0.5 / 0.8 / 1.0, and top-k 40) — does low temperature
+   produce the narrowing signature? This is the mechanism question and it is
+   cheap.
+2. **Fixed-real-fraction arm** — separates "real data helps" from "less
+   repetition helps".
+3. **Five seeds** so the statistics can certify what the effect sizes already
+   show.
+4. **More generations** — does `replace` plateau at a degraded equilibrium or
+   keep falling? Increments were +0.16, +0.10, +0.07: decelerating, not flat.
+
+---
+
 ## R5 — Seed noise floor  ⭐ the number every later comparison depends on
 
 **Date:** 2026-09-13 · **Reproduce:** `make noise-floor` · **Pre-registered:**

@@ -238,7 +238,7 @@ def test_rope_rejects_an_odd_head_dim():
 
 
 def test_rope_rejects_a_too_long_sequence():
-    with pytest.raises(ValueError, match="exceeds RoPE cache"):
+    with pytest.raises(ValueError, match="exceed RoPE cache"):
         RotaryEmbedding(head_dim=16, max_seq_len=8)(16)
 
 
@@ -401,7 +401,7 @@ def test_generate_restores_training_mode():
 
 
 def test_sequence_longer_than_the_model_is_rejected(model):
-    with pytest.raises(ValueError, match="exceeds model maximum"):
+    with pytest.raises(ValueError, match="exceed model maximum"):
         model(torch.randint(0, VOCAB, (1, model.config.seq_len + 1)))
 
 

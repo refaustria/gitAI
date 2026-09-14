@@ -222,7 +222,37 @@ composition. That variant is **not** run here.
 
 ### Result
 
-*(filled in when the experiment completes — see [results.md](results.md) R6)*
+Full write-up: [results.md R6](results.md#r6--model-collapse-does-self-training-degrade-a-small-lm--the-headline-result).
+
+**Headline:** self-training degrades the model substantially and reproducibly
+(`replace` +0.3212 BPB versus control by generation 3, 80× the noise floor).
+Accumulating real data slows it to ~41% of that rate but does not stop it
+(+0.1410, 35× the noise floor).
+
+**Scorecard: 3 of 5 predictions wrong.**
+
+| # | Prediction | Outcome |
+|---|---|---|
+| 1 | control flat within noise | Marginal — +0.0065 cumulative, 1.6× floor |
+| 2 | replace degrades +0.05–0.30 | **Confirmed**, magnitude slightly exceeded |
+| 3 | accumulate within 0.02 of control | **Wrong** — off by ~7× |
+| 4 | diversity falls before loss rises | **Falsified** — diversity *rises* |
+| 5 | training loss falls as held-out rises | **Falsified** — it rises |
+
+**What the wrong predictions bought.** Predictions 4 and 5 were both downstream
+of assuming the classic narrowing mechanism. Their failure is what located the
+actual one: at temperature 1.0 with no truncation, a weak parent produces a
+*noisier* approximation of the real distribution rather than a narrower one, so
+the failure mode is error accumulation rather than mode collapse. Had I not
+written those predictions down, I would very likely have reported "collapse
+confirmed" and never looked at the diversity numbers at all.
+
+That is the argument for pre-registration, in one experiment.
+
+**Next question, now well-posed:** does sampling temperature select the failure
+mode? Low temperature and top-k truncate the tails at generation time and should
+produce narrowing; temperature 1.0 compounds entropy and produces noise. The
+diversity metrics distinguish them directly, and the experiment is cheap.
 
 ---
 

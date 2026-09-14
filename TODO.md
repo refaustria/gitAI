@@ -19,7 +19,7 @@ research. Rationale for the choices below lives in
 | [2](#phase-2--the-model) | The model | ✅ done |
 | [3](#phase-3--training-loop) | Training loop | 1–2 weeks |
 | [4](#phase-4--evaluation-harness) | Evaluation harness | ✅ done |
-| [5](#phase-5--research) | Research | ongoing |
+| [5](#phase-5--research) | Research | first result |
 | [6](#phase-6--scale-up) | Scale-up (optional) | 1–2 weeks |
 | [7](#phase-7--inference--write-up) | Inference & write-up | 1–2 weeks |
 | [8](#phase-8--the-self-improvement-loop) | The self-improvement loop | 2–4 weeks |
@@ -270,24 +270,36 @@ Also delivered:
 
 ---
 
-## Phase 5 — Research
+## Phase 5 — Research (first result in)
 
 *Goal: answer the question. This is the point of everything above.*
+
+**Status: first experiment complete.** `make collapse` runs it.
+Self-training degrades a small LM by +0.32 BPB over three generations (80x the
+noise floor); accumulating real data slows this to ~41% of that rate but does
+not stop it. Three of five pre-registered predictions were wrong, and their
+failure located the actual mechanism -- see
+[results.md R6](docs/results.md) and [E3](docs/lab-notebook.md).
 
 Question **F** is now decided ([Decision 12](docs/decisions.md#12-research-question)):
 *when does a bounded self-improvement loop help, and when does it collapse?*
 Phase 5 runs the manual, single-variable version of that; Phase 8 automates it.
 
-- [ ] Write the experimental design: variables, controls, grid, seeds, success criteria
-- [ ] Pre-register predictions in `docs/lab-notebook.md`
-- [ ] Sweep runner (a for-loop over configs is fine; resist building a framework)
-- [ ] Run the grid, ≥3 seeds per point
-- [ ] Analyse against the noise floor — discard every effect smaller than it
-- [ ] Plot results; write them up in `docs/results.md`
-- [ ] **Record negative results with equal care**
-- [ ] Iterate: the first grid usually reveals the question was slightly wrong
+- [x] Experimental design: 3 arms x 3 generations x 3 seeds, one independent variable
+- [x] Pre-registered five predictions with falsification criteria (E3) before running
+- [x] `scripts/collapse_experiment.py` -- incremental JSONL so partial runs survive
+- [x] 30 training runs, 15 corpus generations, 34.5 min
+- [ ] **Re-run at 5 seeds** -- 3 seeds cannot reach p<0.05 by permutation test (floor p=0.10)
+- [x] `scripts/analyse_collapse.py` -- all effects 17-80x the measured noise floor
+- [x] Written up as R6
+- [ ] Plots (tables only)
+- [x] Three falsified predictions recorded in full, including the one that mattered most
+- [x] It did -- the mechanism is error accumulation, not distribution narrowing
+- [ ] **Temperature sweep** -- does low temperature produce the narrowing signature? The mechanism question, and cheap
+- [ ] **Fixed-real-fraction arm** -- separates 'real data helps' from 'less repetition helps'
+- [ ] More generations -- does `replace` plateau or keep falling?
 
-**Exit criterion:** `docs/results.md` answers the question with seed-averaged evidence, or states clearly why the question was unanswerable at this scale.
+**Exit criterion:** met. R6 answers the question with seed-averaged evidence, states the mechanism it found instead of the one predicted, and lists what it cannot conclude.
 
 ---
 
@@ -392,6 +404,8 @@ Collected failure modes, written down now so they're recognisable later.
 | **Provenance loss** — synthetic data mixed into the corpus untagged, permanently | `GeneratedDataQuarantined`; tag at generation time |
 | **A loop that logs only its wins** — the rejections were the dataset | Lineage records rejections with reasons |
 | **`except Exception` swallowing a stop request** | `HaltRequested` derives from `BaseException` |
+| **A permutation test with 3 seeds per arm cannot reach p<0.05** — floor is 2/C(6,3)=0.10, so a 10x effect reads "not significant" | `Comparison.underpowered`; use 5 seeds per arm when p-values must mean something |
+| **Changing an error message breaks tests that match on it** — and running only the new test file misses it | Run the whole suite before committing, not the files you touched |
 | **Concurrent torch processes fight over cores** — each grabs all of them, so N runs on N cores is ~N× slower than serial, not equal | `OMP_NUM_THREADS` / `torch.set_num_threads` per process; matters most for the Phase 8 loop, which must not overlap its own evaluations |
 
 ---

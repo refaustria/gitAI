@@ -1,4 +1,4 @@
-.PHONY: help setup test test-fast lint fmt typecheck bench demo data data-sweep train inspect eval report noise-floor halt clean
+.PHONY: help setup test test-fast lint fmt typecheck bench demo data data-sweep train inspect eval report noise-floor collapse halt clean
 
 help:
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -46,6 +46,10 @@ report:  ## rebuild the runs index and print seed-aggregated comparisons
 noise-floor:  ## train 5 seeds of one config to measure the significance threshold
 	for s in 0 1 2 3 4; do .venv/bin/python scripts/train.py --steps 1000 --seed $$s --name noisefloor-s$$s; done
 	.venv/bin/python scripts/report.py
+
+collapse:  ## run the model-collapse experiment (Phase 5, ~35 min)
+	.venv/bin/python scripts/collapse_experiment.py --generations 3 --seeds 3 --steps 500
+	.venv/bin/python scripts/analyse_collapse.py
 
 bench:  ## measure this machine (needs the train extra)
 	.venv/bin/python scripts/benchmark.py --json docs/hardware-baseline.json
