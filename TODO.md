@@ -153,7 +153,7 @@ Instrumentation was built in from the first rung rather than retrofitted; see
 ### The ladder
 
 - [x] **v0 — bigram.** `BigramModel` — starts at exactly ln(V), no non-embedding params
-- [ ] Run it on TinyShakespeare to get the actual floor (needed before 1.87 BPB means anything)
+- [x] Bigram floor measured: **3.2406 BPB** (lab-notebook E2). The transformer's 1.87 beats it by 42% with a quarter of the parameters
 - [x] **v1 — single-head self-attention**, causal mask written by hand
 - [x] **v2 — multi-head + MLP + residual + LayerNorm** (GPT-2)
 - [x] **v3 — RMSNorm** replaces LayerNorm
@@ -297,10 +297,10 @@ Phase 5 runs the manual, single-variable version of that; Phase 8 automates it.
 - [x] It did -- the mechanism is error accumulation, not distribution narrowing
 - [x] **Temperature sweep** -- answered: yes, and it is tail truncation rather than temperature per se (R7)
 - [x] **Does accumulation rescue a low-temperature lineage?** Yes, almost entirely -- retains 6.6% of replace's excess at T0.5 (R8)
-- [ ] **Fixed-real-fraction arm** -- still the open confound: separates "real data anchors" from "a larger pool helps"
+- [~] **Fixed-real-fraction arm** — built as `Anchor` and **currently running** (E6): separates "fraction of real data" from "amount of real data"
 - [x] **Vocabulary coverage wired into the promotion gate** as `CorpusDiversityFloor`, conditioned on retained real data after R8 showed it false-positives without that
 - [ ] **Five seeds for the R8 magnitude** -- direction is solid, the size wants more evidence
-- [ ] **Fixed-real-fraction arm** -- separates 'real data helps' from 'less repetition helps'
+- [ ] Matched-token `accumulate` variant — subsample the accumulated pool back to the real corpus size
 - [ ] More generations -- does `replace` plateau or keep falling?
 
 **Exit criterion:** met. R6 answers the question with seed-averaged evidence, states the mechanism it found instead of the one predicted, and lists what it cannot conclude.
@@ -323,8 +323,9 @@ Phase 5 runs the manual, single-variable version of that; Phase 8 automates it.
 
 ## Phase 7 — Inference & write-up
 
-- [ ] KV-cache inference (and a test that cached and uncached generation agree exactly)
-- [ ] Sampling: temperature, top-k, top-p, with seeded reproducibility
+- [x] KV-cache inference — brought forward in Phase 5; cached and uncached generation are bit-identical on every rung
+- [x] Sampling: temperature, top-k, greedy, seeded and reproducible
+- [ ] top-p (nucleus) sampling — not yet
 - [ ] A small CLI or notebook for interacting with a trained model
 - [ ] Export final weights + tokenizer + model card
 - [ ] Write-up: method, results, negative results, limitations, reproduction instructions
