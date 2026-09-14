@@ -76,10 +76,18 @@ class RotaryEmbedding(nn.Module):
         self.register_buffer("sin", emb.sin(), persistent=False)
         self.max_seq_len = max_seq_len
 
-    def forward(self, seq_len: int) -> tuple[torch.Tensor, torch.Tensor]:
-        if seq_len > self.max_seq_len:
-            raise ValueError(f"sequence length {seq_len} exceeds RoPE cache {self.max_seq_len}")
-        return self.cos[:seq_len], self.sin[:seq_len]
+    def forward(self, seq_len: int, offset: int = 0) -> tuple[torch.Tensor, torch.Tensor]:
+        """Angles for positions ``[offset, offset + seq_len)``.
+
+        The offset is what lets incremental generation work: token 500 must be
+        rotated by its *absolute* position even when it is the only token in the
+        forward pass.
+        """
+        if offset + seq_len > self.max_seq_len:
+            raise ValueError(
+                f"positions {offset}..{offset + seq_len} exceed RoPE cache {self.max_seq_len}"
+            )
+        return self.cos[offset : offset + seq_len], self.sin[offset : offset + seq_len]
 
 
 def _rotate_half(x: torch.Tensor) -> torch.Tensor:

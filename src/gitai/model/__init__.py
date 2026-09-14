@@ -10,6 +10,7 @@ from .attention import CausalSelfAttention
 from .bigram import BigramModel
 from .cache import ActivationCache
 from .config import RUNGS, ModelConfig
+from .kvcache import KVCache
 from .layers import MLP, RMSNorm, RotaryEmbedding, SwiGLU, apply_rope
 from .transformer import Block, Transformer
 
@@ -20,6 +21,7 @@ __all__ = [
     "BigramModel",
     "Block",
     "CausalSelfAttention",
+    "KVCache",
     "ModelConfig",
     "RMSNorm",
     "RotaryEmbedding",

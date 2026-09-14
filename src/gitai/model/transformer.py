@@ -16,6 +16,7 @@ from torch import nn
 
 from .cache import ActivationCache
 from .config import RUNGS, ModelConfig
+from .kvcache import KVCache
 from .layers import RotaryEmbedding, build_mlp, build_norm, scaled_init_
 
 __all__ = ["Block", "Transformer"]
@@ -43,11 +44,12 @@ class Block(nn.Module):
         cache: ActivationCache | None = None,
         layer: int | None = None,
         head_mask: torch.Tensor | None = None,
+        kv_cache: KVCache | None = None,
     ) -> torch.Tensor:
         if cache is not None and layer is not None:
             cache.put_layer(layer, "resid_pre", x)
 
-        attn_out = self.attn(self.norm1(x), cos, sin, cache, layer, head_mask)
+        attn_out = self.attn(self.norm1(x), cos, sin, cache, layer, head_mask, kv_cache)
         if cache is not None and layer is not None:
             cache.put_layer(layer, "attn_out", attn_out)
         x = x + attn_out
@@ -119,26 +121,32 @@ class Transformer(nn.Module):
         targets: torch.Tensor | None = None,
         cache: ActivationCache | None = None,
         head_mask: torch.Tensor | None = None,
+        kv_cache: KVCache | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Returns ``(logits, loss)``. ``loss`` is None when no targets are given.
 
         Passing a ``cache`` records every intermediate; passing ``head_mask``
         (shape ``(n_layer, n_head)``) zeroes individual attention heads, which is
-        how ablation experiments run without touching the weights.
+        how ablation experiments run without touching the weights; passing a
+        ``kv_cache`` makes this an incremental generation step, where ``idx``
+        holds only the *new* tokens and positions continue from the cache.
         """
         _, seq = idx.shape
-        if seq > self.config.seq_len:
-            raise ValueError(f"sequence length {seq} exceeds model maximum {self.config.seq_len}")
+        offset = kv_cache.length if kv_cache is not None else 0
+        if offset + seq > self.config.seq_len:
+            raise ValueError(
+                f"positions {offset}..{offset + seq} exceed model maximum {self.config.seq_len}"
+            )
 
         x = self.token_embedding(idx)
         if self.position_embedding is not None:
-            positions = torch.arange(seq, device=idx.device)
+            positions = torch.arange(offset, offset + seq, device=idx.device)
             x = x + self.position_embedding(positions)
         x = self.drop(x)
 
         cos = sin = None
         if self.rope is not None:
-            cos, sin = self.rope(seq)
+            cos, sin = self.rope(seq, offset=offset)
             cos, sin = cos.to(x.dtype), sin.to(x.dtype)
 
         if cache is not None:
@@ -146,7 +154,12 @@ class Transformer(nn.Module):
 
         for i, block in enumerate(self.blocks):
             layer_mask = head_mask[i] if head_mask is not None else None
-            x = block(x, cos, sin, cache, i, layer_mask)
+            x = block(x, cos, sin, cache, i, layer_mask, kv_cache)
+
+        if kv_cache is not None:
+            # After every layer has written, never before — the write offset is
+            # shared across layers.
+            kv_cache.advance(seq)
 
         x = self.norm_f(x)
         if cache is not None:
@@ -173,6 +186,22 @@ class Transformer(nn.Module):
 
     # ------------------------------------------------------------- generation
 
+    def _sample_next(
+        self,
+        logits: torch.Tensor,
+        temperature: float,
+        top_k: int | None,
+        generator: torch.Generator | None,
+    ) -> torch.Tensor:
+        if temperature <= 0:
+            return logits.argmax(dim=-1, keepdim=True)
+        logits = logits / temperature
+        if top_k is not None:
+            kth = logits.topk(min(top_k, logits.size(-1)), dim=-1).values[:, [-1]]
+            logits = logits.masked_fill(logits < kth, float("-inf"))
+        probs = F.softmax(logits, dim=-1)
+        return torch.multinomial(probs, num_samples=1, generator=generator)
+
     @torch.no_grad()
     def generate(
         self,
@@ -181,8 +210,14 @@ class Transformer(nn.Module):
         temperature: float = 1.0,
         top_k: int | None = None,
         generator: torch.Generator | None = None,
+        use_cache: bool = True,
     ) -> torch.Tensor:
-        """Sample continuations. No KV cache yet — that is Phase 7.
+        """Sample continuations.
+
+        With ``use_cache`` (the default) each new token costs one forward pass
+        over a single position instead of re-running attention across the whole
+        prefix. ``use_cache=False`` keeps the naive path, which exists so a test
+        can assert the two agree — see ``test_cached_and_uncached_generation_agree``.
 
         ``generator`` makes sampling reproducible, which matters more than it
         sounds: comparing two checkpoints on differently-seeded samples tells
@@ -191,21 +226,37 @@ class Transformer(nn.Module):
         was_training = self.training
         self.eval()
         try:
-            for _ in range(max_new_tokens):
-                window = idx[:, -self.config.seq_len :]
-                logits, _ = self(window)
-                logits = logits[:, -1, :]
+            if not use_cache:
+                for _ in range(max_new_tokens):
+                    logits, _ = self(idx[:, -self.config.seq_len :])
+                    next_token = self._sample_next(logits[:, -1, :], temperature, top_k, generator)
+                    idx = torch.cat((idx, next_token), dim=1)
+                return idx
 
-                if temperature <= 0:  # greedy
-                    next_token = logits.argmax(dim=-1, keepdim=True)
-                else:
-                    logits = logits / temperature
-                    if top_k is not None:
-                        kth = logits.topk(min(top_k, logits.size(-1)), dim=-1).values[:, [-1]]
-                        logits = logits.masked_fill(logits < kth, float("-inf"))
-                    probs = F.softmax(logits, dim=-1)
-                    next_token = torch.multinomial(probs, num_samples=1, generator=generator)
+            config = self.config
+            kv_cache = KVCache(
+                n_layer=config.n_layer,
+                batch=idx.shape[0],
+                n_head=config.n_head,
+                max_seq=config.seq_len,
+                head_dim=config.head_dim,
+                dtype=self.token_embedding.weight.dtype,
+                device=idx.device,
+            )
+            logits, _ = self(idx[:, -config.seq_len :], kv_cache=kv_cache)
+
+            for _ in range(max_new_tokens):
+                next_token = self._sample_next(logits[:, -1, :], temperature, top_k, generator)
                 idx = torch.cat((idx, next_token), dim=1)
+
+                if kv_cache.length >= config.seq_len:
+                    # Context window full: re-prefill from the last seq_len
+                    # tokens. Costs one full pass per window rather than per
+                    # token, so generation stays linear overall.
+                    kv_cache.reset()
+                    logits, _ = self(idx[:, -config.seq_len :], kv_cache=kv_cache)
+                else:
+                    logits, _ = self(next_token, kv_cache=kv_cache)
             return idx
         finally:
             self.train(was_training)

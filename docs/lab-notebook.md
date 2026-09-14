@@ -145,6 +145,87 @@ learned anything interesting.
 
 ---
 
+## E3 — Does a self-training loop collapse, and does accumulation prevent it?
+
+**Date:** 2026-09-14 · **Status:** prediction recorded before the experiment ran
+
+### Question
+
+The project's headline question ([Decision 12](decisions.md#12-research-question),
+question F). Train a model, have it generate a corpus, train the next generation
+on that corpus, repeat. Does the model degrade? And does *accumulating* real and
+synthetic data, rather than *replacing* real with synthetic, change the answer?
+
+### Setup
+
+Three arms, differing only in the training corpus for generation *n*:
+
+| arm | corpus |
+|---|---|
+| `control` | real data only, every generation |
+| `replace` | only generation *n-1*'s output |
+| `accumulate` | real + every synthetic corpus so far |
+
+3 generations × 3 seeds × 3 arms, plus a shared generation-0 model per seed.
+Each generation is a **freshly initialised** model, so what is inherited is the
+data, not the weights — that isolates the data effect, which is the question.
+Synthetic corpora are generated unconditionally from the document separator, so
+no real text leaks in through prompts, and sized to match the real corpus so the
+arms differ in data *composition*, not volume.
+
+Every arm is scored on the same held-out **real** validation set. This is the
+whole point: a collapsing model gets better at predicting its own output while
+getting worse at predicting reality, and only real held-out data separates those.
+
+### Predictions
+
+1. **`control` stays flat.** Variation across generations within the measured
+   noise floor of 0.0040 BPB. If it drifts more than that, the experiment is
+   measuring something other than what I think.
+2. **`replace` degrades monotonically**, and by more than the noise floor by
+   generation 1 already. Magnitude by generation 3: **+0.05 to +0.30 BPB** worse
+   than control. This is the prediction I hold most confidently — it is what the
+   collapse literature reports and the mechanism is clear.
+3. **`accumulate` stays close to control** — within ~0.02 BPB — and possibly
+   slightly *better*, since it sees strictly more tokens.
+4. **Diversity falls before loss rises.** `distinct_3` on the generated corpus
+   drops in `replace` at generation 1, before held-out BPB has moved much.
+5. **Training loss will mislead.** `replace` models should reach *lower* training
+   loss each generation while their held-out BPB rises — the failure mode that
+   makes naive self-improvement loops dangerous, because their own metrics
+   applaud.
+
+### What would change my mind
+
+- **`replace` not degrading beyond 0.0040 by generation 3** would mean either
+  three generations is too few at this scale, or the synthetic corpus is closer
+  to the real distribution than expected. Either way the conclusion would be
+  "no collapse observed at this scale", stated plainly, not explained away.
+- **`accumulate` degrading as fast as `replace`** would contradict the
+  accumulation hypothesis and be the more interesting result.
+- **`control` drifting** would invalidate everything and send me back to the
+  harness.
+
+### Known confound, stated up front
+
+`accumulate` draws from a larger corpus each generation. **Corrected after
+looking at the harness:** training is a fixed 500 steps for every arm, so all
+arms process the *same number of tokens* — compute is matched. What differs is
+the size and diversity of the pool those tokens are drawn from: `accumulate`
+repeats itself less within a run.
+
+So the confound is narrower than "more data", but it is real: some of any
+advantage `accumulate` shows could be reduced repetition rather than the
+presence of real data. The clean follow-up is to subsample the accumulated
+corpus back to the real corpus size, holding pool size fixed and varying only
+composition. That variant is **not** run here.
+
+### Result
+
+*(filled in when the experiment completes — see [results.md](results.md) R6)*
+
+---
+
 ## Template
 
 ```markdown

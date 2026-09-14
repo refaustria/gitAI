@@ -20,6 +20,7 @@ from torch import nn
 
 from .cache import ActivationCache
 from .config import ModelConfig
+from .kvcache import KVCache
 from .layers import apply_rope
 
 __all__ = ["CausalSelfAttention"]
@@ -51,6 +52,7 @@ class CausalSelfAttention(nn.Module):
         cache: ActivationCache | None = None,
         layer: int | None = None,
         head_mask: torch.Tensor | None = None,
+        kv_cache: KVCache | None = None,
     ) -> torch.Tensor:
         batch, seq, _ = x.shape
 
@@ -64,7 +66,20 @@ class CausalSelfAttention(nn.Module):
             q = apply_rope(q, cos, sin)
             k = apply_rope(k, cos, sin)
 
-        if cache is None and head_mask is None:
+        if kv_cache is not None:
+            offset = kv_cache.length
+            k, v = kv_cache.append(layer or 0, k, v)
+            if seq == 1:
+                # One new query against the whole history — every key is already
+                # in the past, so no mask is needed at all.
+                out = F.scaled_dot_product_attention(q, k, v)
+            else:
+                # Prefill: queries sit at [offset, offset+seq), keys at [0, offset+seq).
+                total = offset + seq
+                query_pos = torch.arange(offset, total, device=x.device).unsqueeze(1)
+                key_pos = torch.arange(total, device=x.device).unsqueeze(0)
+                out = F.scaled_dot_product_attention(q, k, v, attn_mask=key_pos <= query_pos)
+        elif cache is None and head_mask is None:
             out = F.scaled_dot_product_attention(
                 q, k, v, is_causal=True, dropout_p=self.dropout if self.training else 0.0
             )
