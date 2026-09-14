@@ -236,6 +236,58 @@ class TestLoopBehaviour:
         assert all("promoted" in e.payload for e in entries)
         assert loop.lineage.verify()
 
+    def test_two_loops_with_the_same_seed_produce_the_same_lineage(self, tmp_path, setup):
+        """The loop's audit story rests on this and nothing was checking it.
+
+        `scripts/run_loop.py` built its incumbent before seeding anything --
+        `train()` seeds inside itself, long after the weights were drawn. Same
+        seed, identical proposals, different measured BPB, and at iteration 12
+        of a real run the difference was enough to flip a promotion into a
+        rejection. A lineage you cannot regenerate is not an audit trail.
+
+        Asserting the proposals match is not enough: those were identical
+        through the entire bug, because the search space has its own generator.
+        The measurements are what diverged, so the measurements are what this
+        asserts.
+        """
+        first = build_loop(tmp_path / "a", setup).run()
+        second = build_loop(tmp_path / "b", setup).run()
+
+        assert [o.proposal for o in first.iterations] == [o.proposal for o in second.iterations]
+        assert [o.val_bpb for o in first.iterations] == [o.val_bpb for o in second.iterations]
+        assert [o.promoted for o in first.iterations] == [o.promoted for o in second.iterations]
+
+    def test_the_lineage_records_which_incumbent_it_started_from(self, tmp_path, setup):
+        """The loop cannot see how its incumbent was seeded -- it is handed a
+        built model. Recording the starting weights' fingerprint is what lets a
+        reader tell two runs apart that were supposed to be identical, instead
+        of discovering it from drifting numbers three experiments later.
+        """
+        _, tokenizer = setup
+
+        def incumbent(seed: int):
+            torch.manual_seed(seed)
+            return Transformer(
+                ModelConfig(
+                    vocab_size=tokenizer.vocab_size,
+                    seq_len=32,
+                    d_model=32,
+                    n_layer=2,
+                    n_head=4,
+                    **RUNGS["v6_modern"],
+                )
+            )
+
+        same = build_loop(tmp_path / "a", setup, incumbent=incumbent(0))
+        also_same = build_loop(tmp_path / "b", setup, incumbent=incumbent(0))
+        different = build_loop(tmp_path / "c", setup, incumbent=incumbent(999))
+
+        def fingerprint(loop):
+            return json.loads((loop.models_dir / "model.json").read_text())["incumbent_fingerprint"]
+
+        assert fingerprint(same) == fingerprint(also_same)
+        assert fingerprint(same) != fingerprint(different)
+
     def test_the_lineage_stays_tamper_evident(self, tmp_path, setup):
         loop = build_loop(tmp_path, setup)
         loop.run()

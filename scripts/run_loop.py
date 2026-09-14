@@ -13,6 +13,9 @@ import argparse
 import sys
 from pathlib import Path
 
+import numpy as np
+import torch
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from gitai.data import BatchSampler, ShardIndex, read_documents
@@ -51,6 +54,16 @@ def main() -> None:
     parser.add_argument("--max-disk-gib", type=float, default=20.0)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
+
+    # Before anything constructs a module. scripts/train.py seeds here too, but
+    # this script did not, and `train()` seeds only once it is already inside
+    # itself -- by which point the incumbent's weights have been drawn from an
+    # unseeded generator. Every candidate is a clone of that incumbent, so a
+    # single missing line made the entire lineage unreproducible: same seed,
+    # same proposals, different measurements, and at least one promotion
+    # decision flipped by the difference. See docs/evaluation.md.
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
 
     data_dir = Path(args.data)
     workspace = Path(args.workspace)

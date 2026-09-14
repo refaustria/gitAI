@@ -206,7 +206,28 @@ class ImprovementLoop:
         spec: dict = {"kind": type(self.incumbent).__name__}
         if is_dataclass(config) and not isinstance(config, type):
             spec["config"] = asdict(config)
+        spec["incumbent_fingerprint"] = self._fingerprint(self.incumbent)
         (self.models_dir / "model.json").write_text(json.dumps(spec, indent=2, sort_keys=True))
+
+    @staticmethod
+    def _fingerprint(model) -> str:
+        """A hash of the starting weights, so a divergent start is visible.
+
+        The loop is handed its incumbent; it cannot see how that model was
+        seeded, and a caller that builds one before seeding produces a lineage
+        that looks perfectly healthy and cannot be regenerated -- which is
+        exactly what `scripts/run_loop.py` did. Recording the fingerprint turns
+        "these two runs should have been identical" from something you can only
+        discover by noticing the numbers drifted into something the artifacts
+        answer directly.
+        """
+        import hashlib
+
+        digest = hashlib.sha256()
+        for name, tensor in sorted(model.state_dict().items()):
+            digest.update(name.encode())
+            digest.update(tensor.detach().cpu().numpy().tobytes())
+        return digest.hexdigest()
 
     # ------------------------------------------------------------------ helpers
 
