@@ -68,6 +68,19 @@ collapse-temps:  ## temperature sweep: does the sampling regime select the failu
 	.venv/bin/python scripts/collapse_experiment.py --generations 3 --seeds 3 --steps 500 --arms replace --temperature 1.0 --top-k 40
 	.venv/bin/python scripts/analyse_collapse.py
 
+collapse-doses:  ## fixed-pool anchor arm: the real-data dose-response curve (R9)
+	for f in 0.25 0.5; do .venv/bin/python scripts/collapse_experiment.py --generations 3 --seeds 3 --steps 500 --real-fraction $$f --temperature 0.5; done
+	.venv/bin/python scripts/analyse_collapse.py
+
+collapse-all:  ## every cell behind R6-R9, from a clean results file (~2h, serial)
+	@test ! -e runs/collapse || { echo "runs/collapse exists -- move it aside first, results.jsonl appends"; exit 1; }
+	.venv/bin/python scripts/collapse_experiment.py --generations 3 --seeds 3 --steps 500
+	.venv/bin/python scripts/collapse_experiment.py --generations 3 --seeds 3 --steps 500 --arms accumulate,replace --temperature 0.5
+	.venv/bin/python scripts/collapse_experiment.py --generations 3 --seeds 3 --steps 500 --arms replace --temperature 0.8
+	.venv/bin/python scripts/collapse_experiment.py --generations 3 --seeds 3 --steps 500 --arms replace --temperature 1.0 --top-k 40
+	for f in 0.25 0.5; do .venv/bin/python scripts/collapse_experiment.py --generations 3 --seeds 3 --steps 500 --real-fraction $$f --temperature 0.5; done
+	.venv/bin/python scripts/analyse_collapse.py
+
 bench:  ## measure this machine (needs the train extra)
 	.venv/bin/python scripts/benchmark.py --json docs/hardware-baseline.json
 
