@@ -3,10 +3,19 @@
 help:
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
-setup:  ## create the venv and install everything
+setup:  ## create the venv and install everything needed to train and run the loop
 	uv venv --python 3.11
-	uv pip install -e ".[dev]"
+	uv pip install -e ".[dev,train,data]"
 	.venv/bin/pre-commit install
+	@echo
+	@echo "Next: make data   (downloads TinyShakespeare, builds tokenizer and shards)"
+	@echo "      make test   (should be all green before any long run)"
+
+quickstart:  ## fresh clone -> a trained model you can inspect, in one command
+	$(MAKE) setup
+	$(MAKE) data
+	$(MAKE) test
+	$(MAKE) train
 
 test:  ## run the full suite
 	.venv/bin/pytest -q

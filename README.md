@@ -45,9 +45,39 @@ small-model, narrow-corpus target rather than a general-purpose one.
 
 ## Quick start
 
+**On a fresh clone, in order.** The corpus is not in git — it is downloaded and
+rebuilt locally, because corpora do not belong in a repository and some forbid
+redistribution.
+
 ```bash
-make setup     # uv venv + dev install + pre-commit hooks
-make test      # 96 tests, CPU-only, a few seconds
+make setup     # venv + all dependencies (torch, duckdb, safetensors, dev tools)
+make data      # fetch TinyShakespeare, curate, train tokenizer, build shards
+make test      # should be all green before any long run
+make train     # ~1M-parameter model, about 2 minutes on CPU
+```
+
+`make quickstart` runs those four in sequence.
+
+Then:
+
+```bash
+make inspect   # look inside the trained model
+make bench     # measure YOUR hardware — do this before scoping anything
+```
+
+To run the improvement loop, read [docs/runbook.md](docs/runbook.md) first, then:
+
+```bash
+python scripts/run_loop.py --iterations 10 --workspace runs/loop-01
+python scripts/halt.py stop "reason"        # stops at the next boundary
+python scripts/report_loop.py --workspace runs/loop-01
+```
+
+<details>
+<summary>All make targets</summary>
+
+```bash
+make test      # the full suite
 make demo      # train XOR with the hand-written engine — no PyTorch involved
 make data      # fetch -> curate -> tokenize -> shards (TinyShakespeare)
 make data-sweep # vocabulary size vs compression
