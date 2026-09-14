@@ -68,6 +68,105 @@ in Phase 5.
 
 ---
 
+## R9 — A little real data does almost all the work
+
+**Date:** 2026-09-14 · **Pre-registered:** [lab-notebook E6](lab-notebook.md#e6--is-it-the-fraction-of-real-data-or-the-amount)
+· 18 runs completing the dose-response curve at temperature 0.5
+
+A fixed-pool `anchor` arm holds the total corpus at the real corpus size and
+**discards** real data to make room for synthetic — unlike `accumulate`, which
+keeps all of it and lets the fraction fall. That separates two claims R8 could
+not.
+
+### The dose-response curve, at fixed pool size
+
+| real fraction | real tokens | arm | BPB (gen 3) | damage recovered |
+|---:|---:|---|---:|---:|
+| 0% | 0 | `replace` | 4.5339 | — |
+| **25%** | 93,248 | `anchor0.25` | **2.3216** | **89%** |
+| 50% | 186,496 | `anchor0.5` | 2.1660 | 95% |
+| 100% | 372,993 | `control` | 2.0461 | 100% |
+
+"Damage recovered" is the share of `replace`'s 2.488 BPB excess that is closed.
+
+### The finding
+
+> **The first slice of real data does almost all the work.** Going from none to
+> a quarter recovers **89%** of the damage. The remaining three quarters of the
+> corpus buys the last 11%.
+
+This is a steeply diminishing return, and it is the practically useful shape:
+for a self-training loop, what matters is that the real fraction is *non-zero*,
+far more than that it is *large*. A lineage does not need a balanced mix. It
+needs to not be starved.
+
+### Both amount and fraction matter — neither alone explains it
+
+The decisive comparison is `accumulate` against `anchor0.25`, which share a
+nominal 25% real fraction but differ fourfold in real tokens:
+
+| | real fraction | real tokens | BPB |
+|---|---:|---:|---:|
+| `anchor0.25` | 25% | 93k | 2.3216 |
+| `accumulate` | 25% | **373k** | **2.2099** |
+
+**0.112 BPB apart, 28× the noise floor** — at the same fraction. So the absolute
+quantity of real data matters, as predicted.
+
+But it is not only quantity:
+
+| | real fraction | real tokens | BPB |
+|---|---:|---:|---:|
+| `accumulate` | 25% | 373k | 2.2099 |
+| `anchor0.5` | **50%** | **187k** | **2.1660** |
+
+`anchor0.5` holds **half** the real tokens and still scores better — doubling the
+fraction outweighed halving the amount, in this range. **Both levers are real,
+and neither dominates.** My E6 mechanism story — that coverage is purely an
+absolute property — is therefore incomplete.
+
+### Prediction scorecard
+
+| Prediction | Outcome |
+|---|---|
+| Amount matters, not only fraction (~65% confidence) | **Correct in direction** — 28× the noise floor at matched fraction |
+| `anchor` @ 25% in 2.5–3.0 | **Wrong.** Actual 2.3216, below the range |
+| `anchor` @ 50% in 2.25–2.45 | **Wrong.** Actual 2.1660, below the range |
+| Mechanism: coverage is absolute, so fraction is incidental | **Incomplete.** Fraction has its own effect, and a strong one |
+
+**Third experiment running in a row where my magnitude was wrong in the
+favourable direction** (R8: predicted 2.3–2.8, got 2.21; here: predicted
+2.5–3.0, got 2.32). That is a consistent bias worth naming: **I have been
+systematically over-estimating how much damage self-training does once any real
+data is present.** Directions have held up; sizes have not. Future predictions
+should widen their lower bound.
+
+### It qualifies the Phase 8 search space
+
+`SearchSpace.min_real_fraction` defaults to 0.25, justified by R8. R9 sharpens
+what that buys: at 25% real in a fixed pool the lineage still sits **+0.28 BPB
+above control — 70× the noise floor.** So the floor prevents *catastrophe*
+(4.53), not *degradation*.
+
+That is the correct division of labour and worth stating explicitly: the search
+space rules out the unrecoverable regime, and `NoRegression` catches the
+recoverable one. Neither is doing the other's job, and the floor should not be
+mistaken for a safety guarantee.
+
+### Limitations
+
+- **Three seeds**; effect sizes carry the argument, not p-values.
+- **One temperature (0.5).** The curve's shape at T1.0, where damage is mild,
+  is untested and could differ.
+- **The 89% figure is a single point on a coarse grid.** Fractions between 0 and
+  25% are where the curve is steepest and are entirely unsampled — the knee
+  could be at 5% or at 20%.
+- **Fixed pool means less total data**, so `anchor` arms see fewer unique tokens
+  than `accumulate` in absolute terms, which is the effect being measured but
+  also a confound with corpus size per se.
+
+---
+
 ## R8 — Retaining real data makes a lineage regime-proof  ⭐ the practical result
 
 **Date:** 2026-09-14 · **Pre-registered:** [lab-notebook E5](lab-notebook.md#e5--does-accumulating-real-data-rescue-a-collapsing-lineage)

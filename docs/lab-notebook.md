@@ -530,7 +530,32 @@ nominal fraction:
 
 ### Result
 
-*(filled in when the experiment completes — see [results.md](results.md) R9)*
+Full write-up: [results.md R9](results.md#r9--a-little-real-data-does-almost-all-the-work).
+
+| real fraction | real tokens | BPB (g3) | recovered |
+|---:|---:|---:|---:|
+| 0% | 0 | 4.5339 | — |
+| 25% | 93k | 2.3216 | **89%** |
+| 50% | 186k | 2.1660 | 95% |
+| 100% | 373k | 2.0461 | 100% |
+
+**Both matter, and I framed it as an either/or.** At matched 25% fraction,
+`accumulate` (373k real tokens) beats `anchor0.25` (93k) by 0.112 BPB — 28× the
+noise floor — so amount matters, as predicted. But `anchor0.5` (187k tokens, 50%
+fraction) beats `accumulate` (373k tokens, 25%), so fraction has its own strong
+effect too. My mechanism story treated coverage as purely absolute; that is
+incomplete.
+
+**The shape is the useful finding, and I did not predict it at all:** the first
+quarter of real data recovers 89% of the damage, and the remaining three
+quarters buy the last 11%. For a loop, being non-zero matters far more than
+being large.
+
+**A bias worth naming.** Both magnitude predictions were wrong, low — and this
+is the third experiment running where that happened (R8 predicted 2.3–2.8, got
+2.21; here 2.5–3.0, got 2.32). I have been **systematically over-estimating the
+damage self-training does once any real data is present.** Directions have held;
+sizes have not. Future predictions should widen the lower bound.
 
 ---
 

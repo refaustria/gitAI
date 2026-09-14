@@ -65,6 +65,13 @@ class SearchSpace:
 
     # R8: a lineage keeping at least this much real data was robust across every
     # sampling temperature tested; one keeping none collapsed catastrophically.
+    #
+    # R9 sharpens what that buys. At 25% real in a fixed pool the lineage still
+    # sits +0.28 BPB above control — 70x the noise floor. So this floor prevents
+    # *catastrophe* (4.53 BPB, worse than a bigram), not *degradation*. That is
+    # the intended division of labour: the space rules out the unrecoverable
+    # regime, NoRegression catches the recoverable one. Do not mistake this for a
+    # safety guarantee.
     min_real_fraction: float = 0.25
 
     _rejected: tuple[str, ...] = field(default=(), repr=False)

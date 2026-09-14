@@ -303,7 +303,8 @@ Phase 5 runs the manual, single-variable version of that; Phase 8 automates it.
 - [x] It did -- the mechanism is error accumulation, not distribution narrowing
 - [x] **Temperature sweep** -- answered: yes, and it is tail truncation rather than temperature per se (R7)
 - [x] **Does accumulation rescue a low-temperature lineage?** Yes, almost entirely -- retains 6.6% of replace's excess at T0.5 (R8)
-- [~] **Fixed-real-fraction arm** — built as `Anchor` and **currently running** (E6): separates "fraction of real data" from "amount of real data"
+- [x] **Fixed-real-fraction arm** — done (R9): both amount and fraction matter, and the first 25% of real data recovers 89% of the damage
+- [ ] **Sample the 0-25% range** — the curve is steepest there and entirely unsampled; the knee could be at 5% or 20%
 - [x] **Vocabulary coverage wired into the promotion gate** as `CorpusDiversityFloor`, conditioned on retained real data after R8 showed it false-positives without that
 - [ ] **Five seeds for the R8 magnitude** -- direction is solid, the size wants more evidence
 - [ ] Matched-token `accumulate` variant — subsample the accumulated pool back to the real corpus size
@@ -421,6 +422,8 @@ Collected failure modes, written down now so they're recognisable later.
 | **Provenance loss** — synthetic data mixed into the corpus untagged, permanently | `GeneratedDataQuarantined`; tag at generation time |
 | **A loop that logs only its wins** — the rejections were the dataset | Lineage records rejections with reasons |
 | **`except Exception` swallowing a stop request** | `HaltRequested` derives from `BaseException` |
+| **A little real data does almost all the work** — 25% recovers 89% of self-training damage, the remaining 75% buys 11% | For a loop, non-zero matters far more than large (R9) |
+| **`min_real_fraction` prevents catastrophe, not degradation** — at 25% a lineage is still 70x the noise floor above control | The search space rules out the unrecoverable regime; `NoRegression` catches the recoverable one |
 | **An early-warning signal validated in one regime may not hold in another** — `CorpusDiversityFloor` was built from R7 and immediately false-positived on R8's healthy lineage | Condition the gate on what the evidence actually covers; fail closed only when provenance is unknown |
 | **Never train a generation on synthetic data alone** — retaining real data costs nothing and is the difference between 2.21 and 4.53 BPB | Phase 8 loop must always mix real data into every generation (R8) |
 | **Low-temperature / top-k sampling accelerates collapse** — the "higher quality" instinct is exactly backwards | Preserve the tails when generating training data; watch generated-corpus vocabulary coverage (R7) |
