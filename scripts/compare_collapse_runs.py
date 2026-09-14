@@ -63,6 +63,13 @@ def mean(values: list[float]) -> float:
     return sum(values) / len(values)
 
 
+def stdev(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    m = mean(values)
+    return (sum((v - m) ** 2 for v in values) / (len(values) - 1)) ** 0.5
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("old")
@@ -79,7 +86,7 @@ def main() -> None:
 
     header = (
         f"{'arm':12} {'T':>5} {'top_k':>6} {'real':>5} "
-        f"{'old':>8} {'new':>8} {'diff':>9} {'noise':>7}"
+        f"{'old':>8} {'new':>8} {'diff':>9} {'noise':>7} {'own sd':>8}"
     )
     print(header)
     print("-" * len(header))
@@ -91,9 +98,16 @@ def main() -> None:
         units = abs(d) / NOISE_FLOOR
         if units >= 1.0:
             moved.append((cell, d, units))
+        # The global noise floor was measured on a healthy config. A collapsed
+        # arm's own seed spread is an order of magnitude wider, so expressing
+        # its movement in floor-units inflates it into something that looks
+        # systematic when it is ordinary variance for that regime. Report both
+        # and let the wider one win.
+        own = max(stdev(old[cell]), stdev(new[cell]))
+        own_units = abs(d) / own if own else float("inf")
         print(
             f"{arm:12} {temp!s:>5} {top_k!s:>6} {real!s:>5} "
-            f"{o:>8.4f} {n:>8.4f} {d:>+9.4f} {units:>6.1f}x"
+            f"{o:>8.4f} {n:>8.4f} {d:>+9.4f} {units:>6.1f}x {own_units:>7.1f}x"
         )
 
     for label, cells in (("only in old", only_old), ("only in new", only_new)):
@@ -111,6 +125,12 @@ def main() -> None:
         "\nA cell moving is not by itself a problem -- these are different runs. "
         "What matters\nis whether any *comparison* between cells changes sign or "
         "crosses the noise floor,\nwhich is what the conclusions rest on."
+    )
+    print(
+        "\n'noise' is the global floor from R2, measured on a healthy config. "
+        "'own sd' is the\ncell's own seed spread, which is the honest yardstick "
+        "for a collapsed arm -- those\nvary by an order of magnitude more, and "
+        "floor-units overstate their movement."
     )
 
 
