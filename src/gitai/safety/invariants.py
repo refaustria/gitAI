@@ -186,6 +186,87 @@ class GeneratedDataQuarantined:
         )
 
 
+@dataclass
+class CorpusDiversityFloor:
+    """Refuse to promote when the generated corpus has narrowed.
+
+    **An early-warning gate, and the reason it exists is measured rather than
+    assumed.** R7 found that generated-corpus vocabulary coverage at generation 1
+    predicts generation-3 held-out BPB monotonically — it moves a full
+    generation before the damage shows up in loss. ``NoRegression`` catches
+    collapse once it has happened; this catches it while it is happening.
+
+    Thresholds come from the R7 sweep, not from judgement:
+
+    | regime | vocabulary (g1) | distinct_3 (g1) | eventual BPB | verdict |
+    |---|---|---|---|---|
+    | T1.0 | 87.4% | 0.717 | 2.37 | healthy |
+    | T0.8 | 80.6% | 0.375 | 2.86 | mild |
+    | T1.0 + top-k 40 | 46.7% | 0.356 | 3.23 | bad |
+    | T0.5 | 36.9% | 0.038 | 4.53 | catastrophic |
+
+    A vocabulary floor of 0.5 separates the two healthy regimes from the two
+    damaging ones at generation 1, before either had visibly degraded. Note that
+    ``distinct_3`` does *not* separate T0.8 from top-k 40 (0.375 vs 0.356) while
+    vocabulary coverage separates them cleanly (80.6% vs 46.7%) — so coverage is
+    the primary signal here and distinct_3 is a coarser second tripwire.
+
+    The relative check catches gradual erosion that never trips an absolute
+    floor: a lineage drifting down 20% per generation is collapsing even while
+    every individual reading looks acceptable.
+    """
+
+    min_vocabulary_fraction: float = 0.5
+    min_distinct_3: float = 0.1
+    max_relative_drop: float = 0.25
+    name: str = "corpus_diversity_floor"
+    axiom: Axiom = SELF_PRESERVATION
+
+    def check(self, ctx: Mapping[str, Any]) -> InvariantResult:
+        stats = ctx.get("corpus_stats")
+        if stats is None:
+            # Not every iteration generates a corpus; a loop that never
+            # self-trains has nothing to narrow.
+            return InvariantResult(
+                self.name, True, "no generated corpus this iteration", self.axiom
+            )
+
+        coverage = stats.get("vocabulary_fraction")
+        distinct_3 = stats.get("distinct_3")
+        if coverage is None or distinct_3 is None:
+            return InvariantResult(
+                self.name, False, "corpus_stats lacks vocabulary_fraction or distinct_3", self.axiom
+            )
+
+        problems: list[str] = []
+        if coverage < self.min_vocabulary_fraction:
+            problems.append(
+                f"vocabulary coverage {coverage:.1%} below floor {self.min_vocabulary_fraction:.0%}"
+            )
+        if distinct_3 < self.min_distinct_3:
+            problems.append(f"distinct_3 {distinct_3:.4f} below floor {self.min_distinct_3}")
+
+        previous = ctx.get("previous_corpus_stats")
+        if previous and previous.get("vocabulary_fraction"):
+            before = previous["vocabulary_fraction"]
+            drop = (before - coverage) / before
+            if drop > self.max_relative_drop:
+                problems.append(
+                    f"vocabulary coverage fell {drop:.1%} from the previous generation "
+                    f"({before:.1%} -> {coverage:.1%}), above the "
+                    f"{self.max_relative_drop:.0%} limit"
+                )
+
+        if problems:
+            return InvariantResult(self.name, False, "; ".join(problems), self.axiom)
+        return InvariantResult(
+            self.name,
+            True,
+            f"vocabulary {coverage:.1%}, distinct_3 {distinct_3:.4f}",
+            self.axiom,
+        )
+
+
 class InvariantSuite:
     """Runs every invariant and gates promotion on all of them passing."""
 
@@ -241,5 +322,6 @@ def default_suite(
             NoRegression(tolerance=tolerance),
             WritesConfined(guard),
             GeneratedDataQuarantined(),
+            CorpusDiversityFloor(),
         ]
     )

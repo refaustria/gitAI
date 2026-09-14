@@ -6,12 +6,14 @@ from __future__ import annotations
 
 import json
 import socket
+from typing import ClassVar
 
 import pytest
 
 from gitai.safety import (
     CONSTITUTION,
     Budget,
+    CorpusDiversityFloor,
     GeneratedDataQuarantined,
     HaltRequested,
     HaltSwitch,
@@ -247,6 +249,7 @@ def _ctx(**overrides):
         "incumbent": 1.00,
         "written_paths": [],
         "training_shards": [],
+        "corpus_stats": {"vocabulary_fraction": 0.87, "distinct_3": 0.72},
     }
     base.update(overrides)
     return base
@@ -273,6 +276,101 @@ def test_generated_data_must_be_tagged():
     untagged = [{"path": "s0.bin", "synthetic": True}]
     assert inv.check(_ctx(training_shards=tagged)).passed
     assert not inv.check(_ctx(training_shards=untagged)).passed
+
+
+class TestCorpusDiversityFloor:
+    """The early-warning gate, calibrated from measured data (results.md R7)."""
+
+    # Generated-corpus statistics at generation 1, and where each lineage ended
+    # up by generation 3. The gate must separate these using only the generation-1
+    # numbers — a full generation before the damage showed in held-out loss.
+    R7_REGIMES: ClassVar[list] = [
+        ("T1.0", 0.874, 0.7166, 2.37, True),
+        ("T0.8", 0.806, 0.3746, 2.86, True),
+        ("T1.0+top-k 40", 0.467, 0.3556, 3.23, False),
+        ("T0.5", 0.369, 0.0375, 4.53, False),
+    ]
+
+    @pytest.mark.parametrize(
+        ("label", "coverage", "distinct_3", "eventual_bpb", "should_pass"), R7_REGIMES
+    )
+    def test_separates_the_measured_regimes(
+        self, label, coverage, distinct_3, eventual_bpb, should_pass
+    ):
+        """Regression test on the thresholds themselves.
+
+        If someone loosens the floor, this fails and names the regime that would
+        then slip through — along with the BPB that lineage actually reached.
+        """
+        result = CorpusDiversityFloor().check(
+            {"corpus_stats": {"vocabulary_fraction": coverage, "distinct_3": distinct_3}}
+        )
+        assert result.passed is should_pass, (
+            f"{label} (vocabulary {coverage:.1%}, distinct_3 {distinct_3}) "
+            f"reached {eventual_bpb} BPB by generation 3"
+        )
+
+    def test_catches_gradual_erosion_that_never_trips_the_floor(self):
+        """A lineage drifting down 30% per generation is collapsing even while
+        every individual reading looks acceptable on its own."""
+        gate = CorpusDiversityFloor()
+        result = gate.check(
+            {
+                "corpus_stats": {"vocabulary_fraction": 0.60, "distinct_3": 0.5},
+                "previous_corpus_stats": {"vocabulary_fraction": 0.88, "distinct_3": 0.7},
+            }
+        )
+        assert not result.passed
+        assert "fell" in result.detail
+
+    def test_a_modest_decline_is_allowed(self):
+        gate = CorpusDiversityFloor()
+        result = gate.check(
+            {
+                "corpus_stats": {"vocabulary_fraction": 0.80, "distinct_3": 0.5},
+                "previous_corpus_stats": {"vocabulary_fraction": 0.88, "distinct_3": 0.7},
+            }
+        )
+        assert result.passed
+
+    def test_an_iteration_without_generation_passes(self):
+        """A loop that never self-trains has nothing to narrow, and must not be
+        blocked by a gate about a corpus it did not produce."""
+        assert CorpusDiversityFloor().check({}).passed
+
+    def test_malformed_stats_fail_closed(self):
+        assert not CorpusDiversityFloor().check({"corpus_stats": {"tokens": 100}}).passed
+
+    def test_thresholds_are_configurable(self):
+        strict = CorpusDiversityFloor(min_vocabulary_fraction=0.9)
+        assert not strict.check(
+            {"corpus_stats": {"vocabulary_fraction": 0.874, "distinct_3": 0.7}}
+        ).passed
+
+    def test_is_part_of_the_default_gate(self, tmp_path):
+        """Wired in, not merely available."""
+        lineage = Lineage(tmp_path / "l.jsonl")
+        guard = PathGuard([tmp_path])
+        suite = default_suite(lineage, guard, tolerance=0.01)
+        assert any(inv.name == "corpus_diversity_floor" for inv in suite.invariants)
+
+    def test_the_gate_refuses_a_collapsing_promotion_end_to_end(self, tmp_path):
+        """The T0.5 lineage, arriving at the promotion gate at generation 1 — when
+        its held-out BPB was still only 2.69 and NoRegression alone might not yet
+        have fired hard enough to stop it."""
+        lineage = Lineage(tmp_path / "l.jsonl")
+        guard = PathGuard([tmp_path])
+        suite = default_suite(lineage, guard, tolerance=0.01)
+        with pytest.raises(PromotionRefused, match="corpus_diversity_floor"):
+            suite.gate(
+                {
+                    "val_bpb": 2.6850,
+                    "incumbent": 2.6800,  # barely a regression by itself
+                    "written_paths": [],
+                    "training_shards": [],
+                    "corpus_stats": {"vocabulary_fraction": 0.369, "distinct_3": 0.0375},
+                }
+            )
 
 
 def test_writes_confined_invariant(tmp_path):

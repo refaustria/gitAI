@@ -359,6 +359,78 @@ data prevents the catastrophic case, that is the practically important result.
 
 ---
 
+## E5 — Does accumulating real data rescue a collapsing lineage?
+
+**Date:** 2026-09-14 · **Status:** prediction recorded before the experiment ran
+
+### Question
+
+[R6](results.md) showed accumulation slows collapse to ~44% of `replace`'s
+excess at temperature 1.0, where the damage is mild. [R7](results.md) showed
+that at temperature 0.5 the damage is *catastrophic* — 4.53 BPB, worse than the
+bigram baseline, with the corpus down to 11% of the vocabulary.
+
+The practically important question is whether accumulation still helps when
+things are actually going wrong. A brake that works only on gentle slopes is not
+a brake.
+
+### Setup
+
+One missing cell: **`accumulate` at temperature 0.5**, 3 generations × 3 seeds.
+The other three cells already exist, giving a clean 2×2:
+
+| | T1.0 | T0.5 |
+|---|---|---|
+| `replace` | 2.367 (R6) | 4.534 (R7) |
+| `accumulate` | 2.187 (R6) | **this run** |
+
+`control` is regime-independent at 2.046.
+
+### The two hypotheses
+
+**Proportional scaling.** Accumulation reduces the excess over control by a
+fixed fraction regardless of severity. At 44%, that predicts
+`2.046 + 0.44 × 2.488 = ` **~3.14** — still worse than the bigram baseline of
+3.24, i.e. barely a rescue at all.
+
+**Tail anchoring.** Accumulation should help *more* at low temperature, not the
+same amount. The mechanism: at T0.5 the synthetic corpus covers only ~37% of the
+vocabulary, so the retained real data is the only source of tail coverage and
+contributes something the synthetic data structurally cannot. At T1.0 the
+synthetic corpus already covers 87%, so real data adds far less unique signal.
+If this is right the excess should shrink to well below 44%.
+
+### Prediction
+
+**Tail anchoring, ~55% confidence.** Generation-3 BPB in **2.3–2.8**, i.e. the
+excess reduced to roughly 15–30% of `replace`'s rather than 44%.
+
+Held loosely. The counter-argument is real: degenerate, highly repetitive text
+may dominate the gradient out of proportion to its share of the corpus, in which
+case dilution does not save you and the result lands at 3.1 or worse.
+
+There is also a structural drag I already flagged in E3: `accumulate` dilutes
+the real data from 50% to 25% across generations, so its real-data anchor weakens
+exactly as it is needed most.
+
+### What would change my mind
+
+- **Result ≥ 3.1** — proportional scaling wins, accumulation is not a rescue but
+  a discount, and the honest headline is that nothing tested so far prevents
+  catastrophic collapse.
+- **Result ≤ 2.2** — accumulation nearly eliminates the effect even at T0.5,
+  which would be a stronger result than the accumulation literature claims and
+  would need a fourth seed set before I believed it.
+- **Higher variance across seeds than `replace` showed** — would suggest the
+  outcome depends on which degenerate mode the parent fell into, making the mean
+  much less meaningful than the spread.
+
+### Result
+
+*(filled in when the experiment completes — see [results.md](results.md) R8)*
+
+---
+
 ## Template
 
 ```markdown

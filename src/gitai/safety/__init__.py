@@ -10,6 +10,7 @@ from .constitution import CONSTITUTION, Axiom, Precedence, resolve_conflict
 from .guard import NetworkViolation, PathGuard, PathViolation, deny_network
 from .halt import Budget, HaltRequested, HaltSwitch
 from .invariants import (
+    CorpusDiversityFloor,
     GeneratedDataQuarantined,
     Invariant,
     InvariantResult,
@@ -27,6 +28,7 @@ __all__ = [
     "GENESIS",
     "Axiom",
     "Budget",
+    "CorpusDiversityFloor",
     "GeneratedDataQuarantined",
     "HaltRequested",
     "HaltSwitch",
