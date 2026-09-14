@@ -9,7 +9,15 @@ import torch
 
 from gitai.data import BatchSampler, tokenize_to_shards
 from gitai.model import RUNGS, ModelConfig, Transformer
-from gitai.selftrain import ARMS, Accumulate, Control, Replace, diversity, generate_corpus
+from gitai.selftrain import (
+    ARMS,
+    Accumulate,
+    Anchor,
+    Control,
+    Replace,
+    diversity,
+    generate_corpus,
+)
 from gitai.tokenizer import ByteBPETokenizer
 from gitai.training import TrainConfig, evaluate_bpb, lr_at, train
 
@@ -130,6 +138,77 @@ def test_replace_falls_back_to_real_data_with_no_parent():
 def test_accumulate_keeps_everything():
     combined = Accumulate().corpus(["real"], [["gen0"], ["gen1"]])
     assert combined == ["real", "gen0", "gen1"]
+
+
+class TestAnchor:
+    """The fixed-pool arm, which discards real data rather than diluting it.
+
+    The distinction from Accumulate is the entire point: `accumulate` keeps all
+    the real data and lets its *fraction* fall; `anchor` holds the pool constant
+    and throws real data away. That separates "a certain share of real data" from
+    "a certain amount of it", which R8 could not distinguish.
+    """
+
+    REAL: ClassVar[list[str]] = [f"real-{i}" for i in range(100)]
+    SYNTHETIC: ClassVar[list[str]] = [f"synthetic-{i}" for i in range(100)]
+
+    @pytest.mark.parametrize("fraction", [0.0, 0.25, 0.5, 0.75, 1.0])
+    def test_pool_size_is_held_constant(self, fraction):
+        corpus = Anchor(real_fraction=fraction).corpus(self.REAL, [self.SYNTHETIC])
+        assert len(corpus) == len(self.REAL)
+
+    @pytest.mark.parametrize("fraction", [0.25, 0.5, 0.75])
+    def test_real_share_matches_the_requested_fraction(self, fraction):
+        corpus = Anchor(real_fraction=fraction).corpus(self.REAL, [self.SYNTHETIC])
+        real = sum(1 for d in corpus if d.startswith("real-"))
+        assert real / len(corpus) == pytest.approx(fraction, abs=0.02)
+
+    def test_it_discards_real_data_unlike_accumulate(self):
+        """The defining difference, asserted directly."""
+        half = Anchor(real_fraction=0.5).corpus(self.REAL, [self.SYNTHETIC])
+        accumulated = Accumulate().corpus(self.REAL, [self.SYNTHETIC])
+
+        real_kept = sum(1 for d in half if d.startswith("real-"))
+        assert real_kept < len(self.REAL)  # anchor throws real data away
+        assert all(d in accumulated for d in self.REAL)  # accumulate keeps all of it
+
+    def test_generations_see_different_real_subsets(self):
+        """Otherwise 'less real data' would be confounded with 'the same real
+        data over and over'."""
+        arm = Anchor(real_fraction=0.5)
+        first = arm.corpus(self.REAL, [self.SYNTHETIC])
+        second = arm.corpus(self.REAL, [self.SYNTHETIC, self.SYNTHETIC])
+        assert set(first) != set(second)
+
+    def test_is_deterministic_for_a_given_seed(self):
+        a = Anchor(real_fraction=0.5, seed=3).corpus(self.REAL, [self.SYNTHETIC])
+        b = Anchor(real_fraction=0.5, seed=3).corpus(self.REAL, [self.SYNTHETIC])
+        assert a == b
+
+    def test_different_seeds_choose_different_subsets(self):
+        a = Anchor(real_fraction=0.5, seed=1).corpus(self.REAL, [self.SYNTHETIC])
+        b = Anchor(real_fraction=0.5, seed=2).corpus(self.REAL, [self.SYNTHETIC])
+        assert a != b
+
+    def test_generation_zero_uses_real_data_only(self):
+        assert Anchor(real_fraction=0.25).corpus(self.REAL, []) == self.REAL
+
+    def test_fraction_one_reproduces_the_control(self):
+        assert set(Anchor(real_fraction=1.0).corpus(self.REAL, [self.SYNTHETIC])) == set(self.REAL)
+
+    def test_fraction_zero_reproduces_replace(self):
+        corpus = Anchor(real_fraction=0.0).corpus(self.REAL, [self.SYNTHETIC])
+        assert all(d.startswith("synthetic-") for d in corpus)
+
+    @pytest.mark.parametrize("bad", [-0.1, 1.5])
+    def test_rejects_a_fraction_outside_the_unit_interval(self, bad):
+        with pytest.raises(ValueError, match=r"must be in \[0, 1\]"):
+            Anchor(real_fraction=bad)
+
+    def test_name_encodes_the_fraction(self):
+        """So a results file holding several fractions stays unambiguous."""
+        assert Anchor(real_fraction=0.25).name == "anchor0.25"
+        assert Anchor(real_fraction=0.5).name == "anchor0.5"
 
 
 def test_every_arm_is_registered():

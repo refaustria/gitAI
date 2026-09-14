@@ -10,12 +10,13 @@ steadily better at predicting its own output while getting worse at predicting
 reality, and only the real held-out set distinguishes those.
 """
 
-from .arms import ARMS, Accumulate, Arm, Control, Replace
+from .arms import ARMS, Accumulate, Anchor, Arm, Control, Replace
 from .corpus import CorpusStats, diversity, generate_corpus
 
 __all__ = [
     "ARMS",
     "Accumulate",
+    "Anchor",
     "Arm",
     "Control",
     "CorpusStats",

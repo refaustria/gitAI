@@ -458,6 +458,82 @@ validated in one regime is not automatically valid in another.
 
 ---
 
+## E6 — Is it the *fraction* of real data, or the *amount*?
+
+**Date:** 2026-09-14 · **Status:** prediction recorded before the experiment ran
+
+### Question
+
+[R8](results.md) showed `accumulate` holds at 2.21 BPB even at temperature 0.5,
+where `replace` collapses to 4.53, and described it as working at "25% real
+data". That description hides an ambiguity worth resolving.
+
+**`accumulate` never loses any real data.** Its real corpus is the full 373k
+tokens in every generation; the *fraction* falls only because synthetic data is
+piled on top. So R8 does not distinguish two quite different claims:
+
+- **fraction matters** — a lineage needs real data to be a certain share of what
+  it trains on; or
+- **amount matters** — a lineage needs a certain absolute quantity of real
+  tokens, and the fraction is incidental.
+
+These have opposite practical implications. If fraction matters, a loop can keep
+growing its corpus indefinitely as long as it tops up the real share. If amount
+matters, the real corpus is a fixed asset and dilution is harmless.
+
+### Setup
+
+A new **`anchor`** arm: total pool held **constant** at the real corpus size
+(~373k tokens), with a configurable real fraction. Unlike `accumulate`, it
+*discards* real data to make room for synthetic.
+
+Run at temperature 0.5 — the regime where the effect is large enough to resolve
+— at fractions 0.25 and 0.50, giving a four-point dose-response curve when
+combined with what already exists:
+
+| real fraction | real tokens | arm | BPB (g3) |
+|---:|---:|---|---:|
+| 0% | 0 | `replace` (R7) | 4.5339 |
+| 25% | ~93k | `anchor` | **this run** |
+| 50% | ~187k | `anchor` | **this run** |
+| 100% | 373k | `control` | 2.0461 |
+
+And for contrast, `accumulate` at 25% *fraction* but 373k real tokens: 2.2099.
+
+### Prediction
+
+**Amount matters more than fraction, ~65% confidence.**
+
+Reasoning: R8's mechanism was tail anchoring — the real data supplies
+distribution coverage the synthetic data structurally lacks. Coverage is a
+property of how many distinct real tokens and contexts the model sees, which is
+an absolute quantity. Cutting real data to 93k tokens removes three quarters of
+that coverage; diluting it with synthetic data while keeping all 373k does not.
+
+So I expect the fixed-pool arm to do **worse** than `accumulate` at the same
+nominal fraction:
+
+- **`anchor` @ 50%** (187k real): **2.25 – 2.45**
+- **`anchor` @ 25%** (93k real): **2.5 – 3.0**, i.e. clearly worse than
+  `accumulate`'s 2.21 at the same fraction
+
+### What would change my mind
+
+- **`anchor` @ 25% ≈ 2.21** — fraction is what matters, amount is incidental, and
+  my mechanism story is wrong. This would be the more surprising and more
+  practically convenient result.
+- **`anchor` @ 25% ≈ 4.5** — even substantial real data fails to anchor once the
+  absolute quantity drops, meaning the effect has a sharp threshold rather than a
+  gradient. Would make the dose-response curve the interesting object.
+- **Non-monotonic curve** — would suggest I have not controlled something I think
+  I have, and would send me back to the harness before interpreting anything.
+
+### Result
+
+*(filled in when the experiment completes — see [results.md](results.md) R9)*
+
+---
+
 ## Template
 
 ```markdown

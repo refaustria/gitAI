@@ -13,6 +13,7 @@ the real held-out set can tell the difference.
 
 from __future__ import annotations
 
+import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
@@ -92,6 +93,55 @@ class Accumulate(Arm):
         for batch in synthetic_history:
             combined.extend(batch)
         return combined
+
+
+class Anchor(Arm):
+    """Fixed pool size, configurable real fraction. **Discards real data.**
+
+    The distinction from :class:`Accumulate` is the whole point of this arm.
+    `accumulate` never loses any real data — it keeps all 373k real tokens and
+    lets the *fraction* fall by piling synthetic data on top. `anchor` holds the
+    total pool constant and throws real data away to make room, so at 25% real it
+    holds roughly 93k real tokens rather than 373k.
+
+    That separates two claims R8 could not distinguish: whether a lineage needs
+    real data to be a certain **share** of what it trains on, or a certain
+    **absolute quantity** of it. They have opposite practical consequences for a
+    self-improvement loop — under the first, a corpus can grow indefinitely if
+    the real share is topped up; under the second, the real corpus is a fixed
+    asset and dilution is harmless.
+
+    The real subset is reshuffled per generation from a seeded RNG, so a lineage
+    does not spend every generation on the same fixed half of the corpus — that
+    would confound "less real data" with "the same real data repeatedly".
+    """
+
+    def __init__(self, real_fraction: float = 0.5, seed: int = 0) -> None:
+        if not 0.0 <= real_fraction <= 1.0:
+            raise ValueError(f"real_fraction must be in [0, 1], got {real_fraction}")
+        super().__init__(
+            name=f"anchor{real_fraction:g}",
+            description=f"fixed pool, {real_fraction:.0%} real data (discards the rest)",
+        )
+        self.real_fraction = real_fraction
+        self.seed = seed
+
+    def corpus(self, real: list[str], synthetic_history: list[list[str]]) -> list[str]:
+        if not synthetic_history:
+            return list(real)
+        synthetic = synthetic_history[-1]
+
+        # Both corpora are generated at matched token counts, so sampling by
+        # document count approximates the intended token mix closely enough; the
+        # experiment prints the realised counts so the approximation is visible
+        # rather than assumed.
+        rng = random.Random(self.seed * 1000 + len(synthetic_history))
+        n_real = int(len(real) * self.real_fraction)
+        n_synthetic = int(len(synthetic) * (1.0 - self.real_fraction))
+
+        chosen_real = rng.sample(real, min(n_real, len(real)))
+        chosen_synthetic = rng.sample(synthetic, min(n_synthetic, len(synthetic)))
+        return chosen_real + chosen_synthetic
 
 
 ARMS: dict[str, type[Arm]] = {"control": Control, "replace": Replace, "accumulate": Accumulate}

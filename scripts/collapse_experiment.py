@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from gitai.data import BatchSampler, ShardIndex, read_documents, tokenize_to_shards
 from gitai.model import RUNGS, ModelConfig, Transformer
-from gitai.selftrain import ARMS, generate_corpus
+from gitai.selftrain import ARMS, Anchor, generate_corpus
 from gitai.tokenizer import ByteBPETokenizer
 from gitai.training import TrainConfig, train
 
@@ -76,12 +76,21 @@ def main() -> None:
         default=",".join(ARMS),
         help="comma-separated subset of arms to run (control is temperature-independent)",
     )
+    parser.add_argument(
+        "--real-fraction",
+        type=float,
+        default=None,
+        help="run the fixed-pool anchor arm at this real-data fraction instead of a named arm",
+    )
     args = parser.parse_args()
 
-    selected = [a.strip() for a in args.arms.split(",") if a.strip()]
-    unknown = set(selected) - set(ARMS)
-    if unknown:
-        parser.error(f"unknown arm(s) {sorted(unknown)}; available: {sorted(ARMS)}")
+    if args.real_fraction is not None:
+        selected = ["anchor"]
+    else:
+        selected = [a.strip() for a in args.arms.split(",") if a.strip()]
+        unknown = set(selected) - set(ARMS)
+        if unknown:
+            parser.error(f"unknown arm(s) {sorted(unknown)}; available: {sorted(ARMS)}")
 
     data_dir = Path(args.data)
     out_dir = Path(args.out)
@@ -108,6 +117,8 @@ def main() -> None:
         # Every row carries the sampling regime it was produced under, so one
         # results file can hold several sweeps and stay unambiguous.
         row.setdefault("temperature", args.temperature)
+        if args.real_fraction is not None:
+            row.setdefault("real_fraction", args.real_fraction)
         row.setdefault("top_k", args.top_k)
         row.setdefault("steps", args.steps)
         results.write(json.dumps(row) + "\n")
@@ -174,7 +185,12 @@ def main() -> None:
         )
 
         for arm_name in selected:
-            arm = ARMS[arm_name]()
+            arm = (
+                Anchor(real_fraction=args.real_fraction, seed=seed)
+                if arm_name == "anchor"
+                else ARMS[arm_name]()
+            )
+            arm_name = arm.name
             history: list[list[str]] = [gen0_documents] if arm.needs_generation else []
             parent_stats = gen0_stats
 
