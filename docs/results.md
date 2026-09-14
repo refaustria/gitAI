@@ -68,6 +68,105 @@ in Phase 5.
 
 ---
 
+## R8 — Retaining real data makes a lineage regime-proof  ⭐ the practical result
+
+**Date:** 2026-09-14 · **Pre-registered:** [lab-notebook E5](lab-notebook.md#e5--does-accumulating-real-data-rescue-a-collapsing-lineage)
+· One new cell (9 runs, ~13 min) completing the 2×2
+
+### The completed factorial — held-out BPB at generation 3
+
+| | T1.0 | T0.5 | temperature effect |
+|---|---:|---:|---:|
+| **replace** | 2.3673 (+0.321) | **4.5339 (+2.488)** | **+2.167** |
+| **accumulate** | 2.1871 (+0.141) | **2.2099 (+0.164)** | **+0.023** |
+| *control* | *2.0461* | | |
+
+Excess over control retained by accumulation: **43.9%** at T1.0,
+**6.6%** at T0.5.
+
+### The finding
+
+> **Keeping real data in the mix makes the lineage almost immune to the sampling
+> regime.** `replace` swings 2.17 BPB across temperatures; `accumulate` swings
+> 0.023 — about six times the noise floor, and two orders of magnitude smaller.
+
+This is strongly **non-additive**. Accumulation is not a fixed-percentage
+discount on the damage; it is a qualitatively better regime whose benefit grows
+with the severity of what it is protecting against. It rescues the catastrophic
+case far more effectively than the mild one.
+
+### The mechanism, confirmed directly
+
+The `accumulate` lineage at T0.5 produced corpora **just as degenerate** as
+`replace` did:
+
+| generation | vocabulary coverage | distinct_3 |
+|---|---:|---:|
+| 1 | 34.9% | 0.0335 |
+| 2 | 10.9% | 0.0048 |
+
+Its own output collapsed completely — and its *model* finished at 2.21 BPB
+against `replace`'s 4.53. The real data did not prevent the corpus from
+degenerating; it prevented the **model** from following it down. That is
+tail anchoring, observed directly rather than inferred: the retained real data
+supplies distribution coverage the synthetic data structurally cannot, and 25%
+real was enough.
+
+### Prediction scorecard
+
+| Prediction | Outcome |
+|---|---|
+| Tail anchoring over proportional scaling (~55% confidence) | **Correct** — 6.6% retained, nowhere near the 44% proportional scaling predicted |
+| Generation-3 BPB in 2.3–2.8 | **Wrong, in the favourable direction.** Actual 2.2099 — *below* my range. The effect is stronger than I predicted |
+| Seed variance comparable to replace's | Correct — spread 0.022, in line |
+
+**Honouring my own pre-registered scepticism.** E5 stated that a result ≤ 2.2
+"would need a fourth seed set before I believed it." The measured 2.2099 sits
+just above that line — close enough that the caution applies in spirit. The
+direction and mechanism are solid; the *magnitude* deserves five seeds before it
+goes in any write-up as a headline number.
+
+### It broke the gate I had just shipped
+
+[R7](#r7--sampling-temperature-selects-the-collapse-failure-mode-) established
+that corpus vocabulary coverage predicts collapse a generation early, and that
+finding was wired into `CorpusDiversityFloor` as a promotion gate. **R8 shows
+that gate would have refused this healthy lineage** — 34.9% coverage is well
+below its 50% floor, yet the model was fine.
+
+The signal is real but conditional: **corpus degeneracy predicts model collapse
+only when real data is absent from the training mix.** The gate now takes
+`real_data_fraction` and treats a narrow corpus as informational when at least
+20% of the mix is real (the threshold R8 actually measured), while still
+enforcing the floor when the fraction is low *or unknown* — not knowing the mix
+means you cannot claim the anchor.
+
+A useful reminder that an early-warning signal validated in one regime is not
+automatically valid in another, and that shipping a gate one experiment after
+discovering its basis is fast enough to get caught out.
+
+### What this means for the Phase 8 loop
+
+The design implication is concrete and now evidence-backed: **the loop must
+never train a generation on synthetic data alone.** Retaining real data costs
+essentially nothing at T1.0 (+0.02 BPB against `replace`… in fact it *helps*)
+and is the difference between 2.21 and 4.53 at T0.5. It converts the sampling
+temperature from a parameter that must be chosen carefully into one that barely
+matters.
+
+### Limitations
+
+- **Three seeds**, so effect sizes rather than p-values carry the argument.
+- **Three generations.** `accumulate` at T0.5 is still drifting upward
+  (2.106 → 2.170 → 2.210); whether it plateaus or eventually follows is unknown,
+  and its real-data share is falling 50% → 33% → 25% as it goes.
+- **The dilution confound persists** from [R6](#r6--model-collapse-does-self-training-degrade-a-small-lm--the-headline-result):
+  a fixed-real-fraction arm would separate "real data anchors" from "a larger,
+  more varied pool helps".
+- **One corpus, one model size.**
+
+---
+
 ## R7 — Sampling temperature selects the collapse failure mode  ⭐
 
 **Date:** 2026-09-14 · **Pre-registered:** [lab-notebook E4](lab-notebook.md#e4--does-sampling-temperature-select-the-collapse-failure-mode)

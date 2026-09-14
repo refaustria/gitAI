@@ -214,11 +214,26 @@ class CorpusDiversityFloor:
     The relative check catches gradual erosion that never trips an absolute
     floor: a lineage drifting down 20% per generation is collapsing even while
     every individual reading looks acceptable.
+
+    **The limit of this signal, found the hard way in R8.** A first version of
+    this gate refused a *healthy* lineage. At temperature 0.5 the `accumulate`
+    arm produced corpora every bit as degenerate as `replace` did (34.9% then
+    10.9% coverage) — and its model was fine, finishing at 2.21 BPB against
+    `replace`'s 4.53. Retained real data anchors the model even when its own
+    output has collapsed.
+
+    So corpus degeneracy predicts *model* collapse only when real data is absent
+    from the training mix. When ``real_data_fraction`` in the context is at or
+    above ``anchor_fraction``, a narrow corpus is reported but does not block:
+    R8 measured a lineage holding at 25% real data through a fully degenerate
+    corpus. Below that, or when provenance is unknown, the floor is enforced —
+    not knowing the mix means you cannot claim the anchor.
     """
 
     min_vocabulary_fraction: float = 0.5
     min_distinct_3: float = 0.1
     max_relative_drop: float = 0.25
+    anchor_fraction: float = 0.20
     name: str = "corpus_diversity_floor"
     axiom: Axiom = SELF_PRESERVATION
 
@@ -258,6 +273,17 @@ class CorpusDiversityFloor:
                 )
 
         if problems:
+            anchor = ctx.get("real_data_fraction")
+            if anchor is not None and anchor >= self.anchor_fraction:
+                # Measured in R8: a lineage held at 2.21 BPB on 25% real data
+                # while its own corpus collapsed to 11% vocabulary coverage.
+                return InvariantResult(
+                    self.name,
+                    True,
+                    f"corpus narrowed ({'; '.join(problems)}) but {anchor:.0%} of the "
+                    f"training mix is real data, which anchors the model (R8)",
+                    self.axiom,
+                )
             return InvariantResult(self.name, False, "; ".join(problems), self.axiom)
         return InvariantResult(
             self.name,

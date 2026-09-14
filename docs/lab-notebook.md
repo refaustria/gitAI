@@ -427,7 +427,34 @@ exactly as it is needed most.
 
 ### Result
 
-*(filled in when the experiment completes — see [results.md](results.md) R8)*
+Full write-up: [results.md R8](results.md#r8--retaining-real-data-makes-a-lineage-regime-proof--the-practical-result).
+
+**Tail anchoring wins, and by more than predicted.**
+
+| | T1.0 | T0.5 |
+|---|---:|---:|
+| replace | 2.3673 | 4.5339 |
+| accumulate | 2.1871 | **2.2099** |
+
+Accumulation retains 43.9% of replace's excess at T1.0 but only **6.6%** at
+T0.5. `replace` swings 2.17 BPB across temperatures; `accumulate` swings 0.023.
+
+**Mechanism confirmed directly, not inferred.** The accumulate lineage's own
+corpora were every bit as degenerate as replace's (34.9%, then 10.9%
+vocabulary). Its *model* stayed healthy anyway. Real data did not stop the
+corpus collapsing; it stopped the model following it down.
+
+**My range was wrong in the favourable direction** — I predicted 2.3–2.8 and got
+2.2099. And I am holding myself to the scepticism I pre-registered: I wrote that
+≤ 2.2 "would need a fourth seed set before I believed it", and 2.2099 is close
+enough that the caution applies. Direction and mechanism are solid; the
+magnitude wants five seeds before it becomes a headline.
+
+**It falsified a gate I had just shipped.** `CorpusDiversityFloor`, built on R7,
+would have refused this healthy lineage. The signal is conditional: corpus
+degeneracy predicts model collapse only when real data is absent. The gate now
+accounts for that, and the episode is a reminder that an early-warning signal
+validated in one regime is not automatically valid in another.
 
 ---
 

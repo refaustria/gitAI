@@ -310,6 +310,43 @@ class TestCorpusDiversityFloor:
             f"reached {eventual_bpb} BPB by generation 3"
         )
 
+    def test_retained_real_data_prevents_a_false_positive(self):
+        """The correction R8 forced.
+
+        The accumulate lineage at temperature 0.5 produced corpora as degenerate
+        as replace did (34.9% coverage) and stayed healthy at 2.21 BPB, because
+        retained real data anchors the model. A gate that refused it would block
+        a perfectly good promotion.
+        """
+        gate = CorpusDiversityFloor()
+        degenerate = {"vocabulary_fraction": 0.349, "distinct_3": 0.0335}
+
+        without_anchor = gate.check({"corpus_stats": degenerate})
+        assert not without_anchor.passed
+
+        with_anchor = gate.check({"corpus_stats": degenerate, "real_data_fraction": 0.25})
+        assert with_anchor.passed
+        assert "anchors the model" in with_anchor.detail
+
+    def test_a_thin_real_anchor_does_not_excuse_a_narrow_corpus(self):
+        """Below the measured threshold there is no evidence the anchor holds."""
+        gate = CorpusDiversityFloor()
+        result = gate.check(
+            {
+                "corpus_stats": {"vocabulary_fraction": 0.349, "distinct_3": 0.0335},
+                "real_data_fraction": 0.05,
+            }
+        )
+        assert not result.passed
+
+    def test_unknown_provenance_enforces_the_floor(self):
+        """Not knowing the mix means you cannot claim the anchor."""
+        assert (
+            not CorpusDiversityFloor()
+            .check({"corpus_stats": {"vocabulary_fraction": 0.349, "distinct_3": 0.0335}})
+            .passed
+        )
+
     def test_catches_gradual_erosion_that_never_trips_the_floor(self):
         """A lineage drifting down 30% per generation is collapsing even while
         every individual reading looks acceptable on its own."""

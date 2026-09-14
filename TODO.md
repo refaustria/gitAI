@@ -296,8 +296,10 @@ Phase 5 runs the manual, single-variable version of that; Phase 8 automates it.
 - [x] Three falsified predictions recorded in full, including the one that mattered most
 - [x] It did -- the mechanism is error accumulation, not distribution narrowing
 - [x] **Temperature sweep** -- answered: yes, and it is tail truncation rather than temperature per se (R7)
-- [ ] **Does accumulation rescue a low-temperature lineage?** The practically important follow-up
-- [ ] **Wire vocabulary coverage into `NoRegression`** -- it predicts collapse a generation before BPB moves
+- [x] **Does accumulation rescue a low-temperature lineage?** Yes, almost entirely -- retains 6.6% of replace's excess at T0.5 (R8)
+- [ ] **Fixed-real-fraction arm** -- still the open confound: separates "real data anchors" from "a larger pool helps"
+- [x] **Vocabulary coverage wired into the promotion gate** as `CorpusDiversityFloor`, conditioned on retained real data after R8 showed it false-positives without that
+- [ ] **Five seeds for the R8 magnitude** -- direction is solid, the size wants more evidence
 - [ ] **Fixed-real-fraction arm** -- separates 'real data helps' from 'less repetition helps'
 - [ ] More generations -- does `replace` plateau or keep falling?
 
@@ -350,6 +352,8 @@ trustworthy eval, and a measured noise floor before any of this means anything.
 - [ ] `propose()` — sample a candidate config / data mixture
 - [ ] `generate()` — incumbent produces synthetic data, **tagged with provenance at birth**
 - [ ] `filter()` — quality, dedup, length; rejects retained, never deleted
+- [ ] **Always mix real data into every generation's corpus** — R8: this is what makes the loop robust to the sampling regime, and it is nearly free
+- [ ] **Record `real_data_fraction` and `corpus_stats` in the gate context** — `CorpusDiversityFloor` needs both to judge correctly
 - [ ] `train()` — from the incumbent checkpoint, bounded steps
 - [ ] `evaluate()` — held-out BPB + probes, ≥3 seeds
 - [ ] `gate()` — wire in `InvariantSuite`; fail-closed
@@ -406,6 +410,8 @@ Collected failure modes, written down now so they're recognisable later.
 | **Provenance loss** — synthetic data mixed into the corpus untagged, permanently | `GeneratedDataQuarantined`; tag at generation time |
 | **A loop that logs only its wins** — the rejections were the dataset | Lineage records rejections with reasons |
 | **`except Exception` swallowing a stop request** | `HaltRequested` derives from `BaseException` |
+| **An early-warning signal validated in one regime may not hold in another** — `CorpusDiversityFloor` was built from R7 and immediately false-positived on R8's healthy lineage | Condition the gate on what the evidence actually covers; fail closed only when provenance is unknown |
+| **Never train a generation on synthetic data alone** — retaining real data costs nothing and is the difference between 2.21 and 4.53 BPB | Phase 8 loop must always mix real data into every generation (R8) |
 | **Low-temperature / top-k sampling accelerates collapse** — the "higher quality" instinct is exactly backwards | Preserve the tails when generating training data; watch generated-corpus vocabulary coverage (R7) |
 | **Training loss inversely predicts held-out quality across sampling regimes** — a loop gating on it selects the catastrophic regime | Gate on held-out data the loop cannot influence, never on training loss |
 | **A permutation test with 3 seeds per arm cannot reach p<0.05** — floor is 2/C(6,3)=0.10, so a 10x effect reads "not significant" | `Comparison.underpowered`; use 5 seeds per arm when p-values must mean something |
