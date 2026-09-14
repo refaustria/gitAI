@@ -134,7 +134,9 @@ statistics.
 
 Incidentally: the bigram was trained twice by accident and produced
 `3.240565592697779` both times — bit-identical. An unplanned confirmation that
-the determinism guarantee holds end to end.
+the determinism guarantee holds end to end *on this machine*. It does not hold
+bitwise on every platform: see
+[evaluation.md](evaluation.md#reproducibility-is-not-bitwise-everywhere).
 
 ### Follow-up
 

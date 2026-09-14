@@ -133,6 +133,46 @@ data hash, seeds. Test this for real — pick an old run, re-run it from its
 manifest, confirm the curve matches. Do this early, while there are few runs, not
 after you have 200.
 
+### Reproducibility is not bitwise everywhere
+
+The determinism test is written against a tolerance, not equality, and the
+reason is worth recording because it qualifies a claim made loosely elsewhere in
+these docs.
+
+**What is measured.** On an Intel Mac, two identically seeded 20-step AdamW runs
+of the same code in the same process produced `1.1013418974562068` and
+`1.1013418974562064` — a relative difference of **3.6e-16**, one to two units in
+the last place of a float64. The same test is exactly equal here on Linux
+(NumPy 2.4 against OpenBLAS 0.3.31, Haswell kernels).
+
+**What a real determinism bug looks like, for contrast.** Changing the seed on
+that same test moves the loss by **9.7e-02 relative** — fourteen orders of
+magnitude larger. There is an enormous empty gap between the two, and the test
+now asserts `rel=1e-9` inside it: seven orders above the floating-point noise,
+seven below the smallest failure worth catching. A companion test asserts that
+this relaxed comparison *still fails* on a seed change, because loosening an
+assertion is only defensible if you demonstrate it kept its teeth.
+
+**What is not established: the mechanism.** The obvious story is that NumPy
+delegates `matmul` to a BLAS whose reduction order varies between calls. I have
+not verified that, and the first guess — Apple's Accelerate framework — is
+probably wrong: Intel macOS is pinned to `numpy<2` here (see the torch pin in
+`pyproject.toml`), and those wheels ship OpenBLAS, not Accelerate. The matrices
+in this test are also tiny (16x4 @ 4x8), well below any threading threshold, so
+a multithreaded-reduction explanation is weak too. Treat the cause as an
+unidentified floating-point-associativity difference in the platform's linear
+algebra until someone runs `python -c "import numpy; numpy.show_config()"` on
+the affected machine and settles it. Naming a plausible mechanism is not the
+same as having one.
+
+**The practical consequence for the research.** Do not compare BPB across
+machines beyond about 9 significant figures, and do not read a last-digit
+difference between two runs of the same config as evidence of a bug. The
+seed-to-seed noise floor in [results.md](results.md) is ~0.004 BPB, roughly
+thirteen orders of magnitude above this, so every claim in the results stands
+unchanged — but a future test that asserts exact equality on a float derived
+from a matmul will be flaky off this machine, and should not be written.
+
 ---
 
 ## Part 4 — The eval harness

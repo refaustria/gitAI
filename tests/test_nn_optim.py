@@ -167,23 +167,50 @@ def test_overfit_a_single_batch(seed):
     assert loss.item() < 0.01, f"failed to overfit 32 examples: loss {loss.item():.4f}"
 
 
+def _seeded_training_run(seed: int = 42, steps: int = 20) -> list[float]:
+    rng = np.random.default_rng(seed)
+    X = Tensor(rng.standard_normal((16, 4)))
+    y = rng.integers(0, 3, size=16)
+    model = nn.Sequential(nn.Linear(4, 8, rng=rng), nn.ReLU(), nn.Linear(8, 3, rng=rng))
+    opt = optim.AdamW(model.parameters(), lr=0.01)
+    losses = []
+    for _ in range(steps):
+        opt.zero_grad()
+        loss = F.cross_entropy(model(X), y)
+        loss.backward()
+        opt.step()
+        losses.append(loss.item())
+    return losses
+
+
 def test_training_is_deterministic_given_a_seed():
-    """Same seed, same loss, bit for bit. Without this, ablation results are
-    noise and you cannot tell an improvement from a lucky init."""
+    """Same seed, same loss curve. Without this, ablation results are noise and
+    you cannot tell an improvement from a lucky init.
 
-    def run() -> list[float]:
-        rng = np.random.default_rng(42)
-        X = Tensor(rng.standard_normal((16, 4)))
-        y = rng.integers(0, 3, size=16)
-        model = nn.Sequential(nn.Linear(4, 8, rng=rng), nn.ReLU(), nn.Linear(8, 3, rng=rng))
-        opt = optim.AdamW(model.parameters(), lr=0.01)
-        losses = []
-        for _ in range(20):
-            opt.zero_grad()
-            loss = F.cross_entropy(model(X), y)
-            loss.backward()
-            opt.step()
-            losses.append(loss.item())
-        return losses
+    **Not asserted bit-for-bit, and the reason matters.** On an Intel Mac two
+    identically seeded runs of this function landed one ULP apart (3.6e-16
+    relative); on Linux against OpenBLAS they are exactly equal. The mechanism
+    is an unidentified floating-point-associativity difference in the platform's
+    linear algebra — see docs/evaluation.md, which also records why the obvious
+    Accelerate explanation is probably wrong.
 
-    assert run() == run()
+    A tolerance of 1e-9 sits seven orders of magnitude above that noise
+    (~4e-16 relative) and seven below what a genuine determinism bug produces
+    (~1e-1 relative, measured against a different seed). The test therefore
+    still fails loudly on unseeded RNG or shared state, which is what it is for
+    — ``test_the_determinism_check_still_catches_real_nondeterminism`` proves it.
+    """
+    first, second = _seeded_training_run(), _seeded_training_run()
+    assert first == pytest.approx(second, rel=1e-9)
+
+
+def test_the_determinism_check_still_catches_real_nondeterminism():
+    """A negative control for the relaxed tolerance above.
+
+    Loosening an assertion is only safe if it still fails on the thing it was
+    written to catch. Two different seeds must be far outside 1e-9.
+    """
+    with pytest.raises(AssertionError):
+        assert _seeded_training_run(seed=42) == pytest.approx(
+            _seeded_training_run(seed=43), rel=1e-9
+        )

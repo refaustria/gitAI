@@ -167,7 +167,7 @@ Instrumentation was built in from the first rung rather than retrofitted; see
 - [x] **Overfit one batch** — every rung, 8 sequences to <0.1 loss
 - [x] **Causality** — every rung, both the fused and instrumented attention paths
 - [x] Shape and dtype contracts; cache completeness
-- [x] Determinism: same seed ⇒ identical weights and identical forward
+- [x] Determinism: same seed ⇒ identical weights and identical forward (to 1e-9 relative — not bitwise reproducible on every platform; see [evaluation.md](docs/evaluation.md#reproducibility-is-not-bitwise-everywhere))
 - [x] Parameter count matches a hand-derived formula, every rung, embedding split out
 - [x] Fused vs instrumented attention agree numerically (the dual-implementation check)
 - [x] Initial loss = ln(vocab); tied embeddings' copy-prior pinned down as a test
@@ -435,6 +435,8 @@ Collected failure modes, written down now so they're recognisable later.
 | **A permutation test with 3 seeds per arm cannot reach p<0.05** — floor is 2/C(6,3)=0.10, so a 10x effect reads "not significant" | `Comparison.underpowered`; use 5 seeds per arm when p-values must mean something |
 | **Changing an error message breaks tests that match on it** — and running only the new test file misses it | Run the whole suite before committing, not the files you touched |
 | **A resume that restores four of five pieces of state looks completely healthy and silently diverges** | Assert bit-identical weights *and* loss trajectory against an uninterrupted run |
+| **"Same seed ⇒ bit-identical" does not hold on every platform** — identical NumPy code diverged by 1 ULP (3.6e-16 relative) on an Intel Mac and not on Linux; a real determinism bug is 9.7e-02, fourteen orders larger | Assert determinism to a tolerance inside that gap, plus a negative control proving the loosened assertion still fails on a seed change. Do not assert exact equality on any float that came out of a matmul |
+| **Naming a mechanism is not diagnosing one** — I attributed the above to Apple Accelerate before checking that the Intel-Mac numpy pin ships OpenBLAS | Write down what was measured and what was inferred, separately; leave the cause open until someone runs `numpy.show_config()` on the affected machine |
 | **Concurrent torch processes fight over cores** — each grabs all of them, so N runs on N cores is ~N× slower than serial, not equal | `OMP_NUM_THREADS` / `torch.set_num_threads` per process; matters most for the Phase 8 loop, which must not overlap its own evaluations |
 
 ---

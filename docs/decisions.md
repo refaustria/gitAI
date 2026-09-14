@@ -237,7 +237,7 @@ The generic advice is not the valuable part. **These ML-specific tests are:**
 | **Overfit one batch** — 32 examples to ≈0 loss in <500 steps | Roughly 90% of all model bugs, in 30 seconds |
 | **Causality** — perturbing token *t* must not change logits at positions < *t* | Off-by-one in the attention mask. This bug still trains to a plausible-looking loss curve, which is why it survives for weeks |
 | **Tokenizer round-trip** — `decode(encode(s)) == s` over random Unicode | Byte-boundary and normalisation bugs |
-| **Determinism** — same seed ⇒ bit-identical loss for N steps | Hidden nondeterminism that makes ablations meaningless |
+| **Determinism** — same seed ⇒ same loss for N steps, to a tolerance seven orders of magnitude tighter than a real bug and seven looser than BLAS noise | Hidden nondeterminism that makes ablations meaningless |
 | **Checkpoint resume** — save, reload, continue ⇒ identical trajectory | Optimiser state and RNG state not being saved |
 | **Grad-accumulation equivalence** — `accum=4, bs=8` ≈ `accum=1, bs=32` | Loss-scaling errors |
 | **Finite-difference gradient check** on the NumPy engine | Backprop maths errors |
