@@ -201,6 +201,29 @@ class TestLoopSafety:
         with pytest.raises(FileExistsError, match="never overwritten"):
             loop._save_promoted(0, loop.incumbent)
 
+    def test_a_promoted_model_can_actually_be_loaded_back(self, tmp_path, setup):
+        """The sibling test above refuses to overwrite a promoted model so the
+        lineage stays reconstructible. That guarantee was hollow: safetensors
+        stores tensors, not the class that produced them, and the loop never
+        recorded the architecture. Reconstructibility means a checkpoint plus
+        what is on disk is enough to get the model back, so assert the
+        round-trip rather than the file's continued existence.
+        """
+        from safetensors.torch import load_model
+
+        loop = build_loop(tmp_path, setup)
+        path = loop._save_promoted(0, loop.incumbent)
+
+        spec = json.loads((loop.models_dir / "model.json").read_text())
+        rebuilt = Transformer(ModelConfig(**spec["config"]))
+        load_model(rebuilt, str(path))  # strict: raises on any shape mismatch
+
+        x = torch.randint(0, spec["config"]["vocab_size"], (2, 16))
+        loop.incumbent.eval()
+        rebuilt.eval()
+        with torch.no_grad():
+            assert torch.equal(rebuilt(x)[0], loop.incumbent(x)[0])
+
 
 class TestLoopBehaviour:
     def test_it_records_both_promotions_and_rejections(self, tmp_path, setup):

@@ -32,7 +32,7 @@ import json
 import random
 import shutil
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from pathlib import Path
 from typing import Any
 
@@ -185,6 +185,28 @@ class ImprovementLoop:
 
         self.incumbent_bpb = float("inf")
         self.synthetic_history: list[list[str]] = []
+        self._write_model_spec()
+
+    def _write_model_spec(self) -> None:
+        """Record the architecture every promoted checkpoint was written from.
+
+        ``_save_promoted`` refuses to overwrite a parent because "the lineage
+        must stay reconstructible". It wasn't: safetensors stores tensors, not
+        the class that produced them, so a promoted model could not be loaded
+        back without knowing the config out of band. The loop never wrote it
+        down. Every architectural rung in this project is one flag away from
+        its neighbours, so guessing wrong loads silently-wrong weights rather
+        than failing.
+
+        The spec is written once, at construction, because the loop only ever
+        trains clones of its incumbent -- the architecture is invariant across
+        the whole lineage, and a per-checkpoint copy would imply otherwise.
+        """
+        config = getattr(self.incumbent, "config", None)
+        spec: dict = {"kind": type(self.incumbent).__name__}
+        if is_dataclass(config) and not isinstance(config, type):
+            spec["config"] = asdict(config)
+        (self.models_dir / "model.json").write_text(json.dumps(spec, indent=2, sort_keys=True))
 
     # ------------------------------------------------------------------ helpers
 
