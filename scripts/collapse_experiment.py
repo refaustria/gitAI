@@ -71,7 +71,17 @@ def main() -> None:
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--top-k", type=int, default=None)
     parser.add_argument("--gen-batch", type=int, default=256)
+    parser.add_argument(
+        "--arms",
+        default=",".join(ARMS),
+        help="comma-separated subset of arms to run (control is temperature-independent)",
+    )
     args = parser.parse_args()
+
+    selected = [a.strip() for a in args.arms.split(",") if a.strip()]
+    unknown = set(selected) - set(ARMS)
+    if unknown:
+        parser.error(f"unknown arm(s) {sorted(unknown)}; available: {sorted(ARMS)}")
 
     data_dir = Path(args.data)
     out_dir = Path(args.out)
@@ -95,12 +105,19 @@ def main() -> None:
     results = results_path.open("a", encoding="utf-8")
 
     def record(row: dict) -> None:
+        # Every row carries the sampling regime it was produced under, so one
+        # results file can hold several sweeps and stay unambiguous.
+        row.setdefault("temperature", args.temperature)
+        row.setdefault("top_k", args.top_k)
+        row.setdefault("steps", args.steps)
         results.write(json.dumps(row) + "\n")
         results.flush()
 
     print(f"real corpus: {len(real_documents):,} documents / {real_tokens:,} tokens")
     print(f"val: {val_sampler.total_tokens:,} tokens (real, held out, constant)")
-    print(f"{args.generations} generations x {args.seeds} seeds x {len(ARMS)} arms\n")
+    regime = f"temperature {args.temperature}" + (f", top-k {args.top_k}" if args.top_k else "")
+    print(f"{args.generations} generations x {args.seeds} seeds x {len(selected)} arms")
+    print(f"sampling: {regime}\n")
 
     started = time.perf_counter()
     train_config = TrainConfig(
@@ -156,8 +173,8 @@ def main() -> None:
             }
         )
 
-        for arm_name, arm_class in ARMS.items():
-            arm = arm_class()
+        for arm_name in selected:
+            arm = ARMS[arm_name]()
             history: list[list[str]] = [gen0_documents] if arm.needs_generation else []
             parent_stats = gen0_stats
 

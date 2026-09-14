@@ -256,6 +256,76 @@ diversity metrics distinguish them directly, and the experiment is cheap.
 
 ---
 
+## E4 — Does sampling temperature select the collapse failure mode?
+
+**Date:** 2026-09-14 · **Status:** prediction recorded before the experiment ran
+
+### Question
+
+[R6](results.md) found that self-training degrades a small LM, but **not** by
+the mechanism the literature describes. Diversity rose rather than fell, and the
+degrading models had *higher* training loss, not lower. The reading was that at
+temperature 1.0 a weak parent produces a noisier, higher-entropy approximation
+of the real distribution — error accumulation, not mode collapse.
+
+That reading makes a falsifiable claim: **the failure mode should depend on the
+sampling temperature.** Low temperature and top-k truncation cut the tails at
+generation time, which is precisely the narrowing that classic collapse
+describes. Temperature 1.0 preserves and compounds entropy instead.
+
+### Setup
+
+The `replace` arm only (the one that degrades fastest), at temperatures **0.5**,
+**0.8** and **1.0**, plus **top-k 40 at temperature 1.0**. 3 generations × 3
+seeds each. Everything else identical to R6, so temperature is the single
+independent variable. The `control` arm never generates, so it is
+temperature-independent and reused from R6.
+
+### Predictions
+
+**High confidence — diversity falls with temperature.** Generated-corpus
+`distinct_2` and `distinct_3` should drop monotonically as temperature drops.
+This is close to definitional: sharpening a distribution reduces the entropy of
+samples drawn from it. If this does *not* hold, the diversity metrics are
+measuring something other than what I think and every conclusion in R6 that
+rests on them needs revisiting.
+
+**Genuinely uncertain — which direction BPB moves.** The two hypotheses make
+**opposite** predictions, which is what makes this worth running:
+
+| hypothesis | at low temperature | reasoning |
+|---|---|---|
+| **narrowing** | degrades *faster* | tails are cut at generation time, so the child never sees them and is badly surprised by real tail tokens. Cross-entropy punishes confident wrongness hard |
+| **structure** | degrades *slower* | low-temperature text is more grammatical and more Shakespeare-like on the surface, so it teaches local structure better |
+
+**My call: faster, at roughly 60% confidence.** I expect the tail-loss effect to
+dominate, because bits-per-byte is an average over *all* real tokens including
+rare ones, and a model trained on tail-free data assigns them near-zero
+probability — which is enormously expensive in log loss. But I hold this
+loosely; the structure argument is not silly, and low-temperature text really is
+closer to Shakespeare to read.
+
+**Secondary:** if narrowing is the mechanism at low temperature, `replace`'s
+*training* loss at temp 0.5 should be **lower** than at temp 1.0 — the child
+fits a sharper, easier distribution. That would be prediction 5 from E3 finally
+coming true, just at a temperature I did not test.
+
+### What would change my mind
+
+- **Diversity flat across temperatures** — the metrics are broken, and R6's
+  mechanism claim collapses with them.
+- **BPB flat across temperatures** — temperature does not select the failure
+  mode; something else explains R6, and I have no candidate for what.
+- **Non-monotonic BPB** — would suggest two competing effects of comparable
+  size, which would be the most interesting outcome and the hardest to write up
+  honestly.
+
+### Result
+
+*(filled in when the experiment completes — see [results.md](results.md) R7)*
+
+---
+
 ## Template
 
 ```markdown
