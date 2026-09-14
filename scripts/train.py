@@ -109,6 +109,27 @@ def main() -> None:
     parser.add_argument("--eval-every", type=int, default=250)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--name", default=None)
+    parser.add_argument(
+        "--accumulation-steps",
+        type=int,
+        default=1,
+        help="split each effective batch into this many forward passes",
+    )
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=0,
+        help="write a resumable checkpoint every N steps (0 = off)",
+    )
+    parser.add_argument(
+        "--keep-last", type=int, default=2, help="how many step checkpoints to retain"
+    )
+    parser.add_argument(
+        "--resume",
+        metavar="RUN_DIR",
+        default=None,
+        help="resume from the latest checkpoint in this run directory",
+    )
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)

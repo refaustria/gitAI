@@ -17,7 +17,7 @@ research. Rationale for the choices below lives in
 | [0](#phase-0--foundations) | Foundations & understanding | 1–2 weeks |
 | [1](#phase-1--data-pipeline) | Data pipeline | ✅ done |
 | [2](#phase-2--the-model) | The model | ✅ done |
-| [3](#phase-3--training-loop) | Training loop | 1–2 weeks |
+| [3](#phase-3--training-loop) | Training loop | done |
 | [4](#phase-4--evaluation-harness) | Evaluation harness | ✅ done |
 | [5](#phase-5--research) | Research | first result |
 | [6](#phase-6--scale-up) | Scale-up (optional) | 1–2 weeks |
@@ -195,21 +195,27 @@ Also delivered — instrumentation and a working trainer, both brought forward:
 
 ---
 
-## Phase 3 — Training loop *(partly done)*
+## Phase 3 — Training loop (done)
 
 *Goal: runs that are resumable, reproducible, and fully recorded.*
 
-`scripts/train.py` already does the core loop, the schedule, the run directory
-and checkpointing — brought forward because Phase 2 needed a trained model to
-inspect. What remains is marked below.
+**Status: complete.** The core loop came forward into Phase 2; this phase added
+the parts that make a run survive interruption — which an unattended Phase 8
+loop cannot do without.
+
+Resume is exact: `test_resume_reproduces_an_uninterrupted_run` trains 20 steps
+with checkpoints, deletes the last one, resumes from step 9 in a fresh model,
+and asserts bit-identical weights and loss trajectory. Drop any one of the five
+pieces of state — weights, optimiser moments, step number, torch RNG, numpy RNG
+— and it fails while everything still looks healthy.
 
 ### Core loop
 
 - [x] AdamW with correct weight-decay grouping (matrices only)
 - [x] Cosine LR schedule with linear warmup
 - [x] Gradient clipping, norm logged
-- [ ] Gradient accumulation — **test equivalence**: `accum=4, bs=8` ≈ `accum=1, bs=32`
-- [ ] Mixed precision where the device supports it (bf16 on MPS/CUDA; measure on CPU before assuming a win)
+- [x] Gradient accumulation, with equivalence asserted at the gradient level on identical data
+- [ ] Mixed precision — deferred until there is a device that benefits; bf16 on CPU is not obviously a win and should be measured, not assumed
 - [x] Periodic eval (sequential, not sampled) reporting loss and BPB, plus sample generation
 
 ### Run infrastructure
@@ -219,17 +225,17 @@ inspect. What remains is marked below.
 - [x] `manifest.json`: git SHA, dirty flag, tokenizer fingerprint, hardware, versions, seeds
 - [x] `metrics.jsonl` streamed per log step
 - [x] Checkpoints in **safetensors** — via `save_model`, because tied weights alias storage and `save_file` refuses to write it
-- [ ] Checkpoint rotation — a full laptop disk mid-run is a real and infuriating failure
-- [ ] **Resume**: reload model, optimiser state, LR schedule position, RNG state, data position
-- [ ] Test resume: interrupt at step N, resume, assert trajectory matches an uninterrupted run
+- [x] Checkpoint rotation, sorting numerically so step-100 outranks step-99
+- [x] **Resume**: weights, optimiser moments, step number, torch RNG and numpy RNG — all five
+- [x] Resume test: interrupt at step 9, resume, assert bit-identical weights and trajectory
 
 ### Ergonomics
 
-- [ ] Dataclass config schema + YAML + CLI override
-- [ ] Sensible progress output: loss, LR, tokens/sec, ETA, grad norm
+- [ ] YAML config files — `TrainConfig` is already a dataclass with CLI override; file loading is the remaining piece
+- [x] Progress output: loss, LR, grad norm, tokens/sec, ETA
 - [ ] Optional W&B/TensorBoard viewer layered on top of the local JSONL
 
-**Exit criterion:** a multi-hour TinyStories run completes, survives a deliberate interruption and resume, and generates recognisably English text.
+**Exit criterion:** resume is proven exact by test. Still to do on your machine: a multi-hour TinyStories run that survives a real interruption end to end.
 
 ---
 
@@ -417,6 +423,7 @@ Collected failure modes, written down now so they're recognisable later.
 | **Training loss inversely predicts held-out quality across sampling regimes** — a loop gating on it selects the catastrophic regime | Gate on held-out data the loop cannot influence, never on training loss |
 | **A permutation test with 3 seeds per arm cannot reach p<0.05** — floor is 2/C(6,3)=0.10, so a 10x effect reads "not significant" | `Comparison.underpowered`; use 5 seeds per arm when p-values must mean something |
 | **Changing an error message breaks tests that match on it** — and running only the new test file misses it | Run the whole suite before committing, not the files you touched |
+| **A resume that restores four of five pieces of state looks completely healthy and silently diverges** | Assert bit-identical weights *and* loss trajectory against an uninterrupted run |
 | **Concurrent torch processes fight over cores** — each grabs all of them, so N runs on N cores is ~N× slower than serial, not equal | `OMP_NUM_THREADS` / `torch.set_num_threads` per process; matters most for the Phase 8 loop, which must not overlap its own evaluations |
 
 ---

@@ -12,10 +12,12 @@ import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import torch
 
+from gitai.checkpoint import load_checkpoint, rotate_checkpoints, save_checkpoint
 from gitai.data import BatchSampler
 from gitai.interpret.surprisal import surprisal_bits
 
@@ -34,6 +36,7 @@ def lr_at(step: int, total: int, peak: float, warmup: int, floor_ratio: float = 
 class TrainConfig:
     steps: int = 1000
     batch_size: int = 16
+    accumulation_steps: int = 1
     lr: float = 3e-3
     warmup: int = 100
     weight_decay: float = 0.1
@@ -42,6 +45,27 @@ class TrainConfig:
     eval_batches: int = 50
     seed: int = 0
     log_every: int = 50
+    checkpoint_every: int = 0
+    keep_last: int = 2
+
+    def __post_init__(self) -> None:
+        if self.accumulation_steps < 1:
+            raise ValueError(f"accumulation_steps must be >= 1, got {self.accumulation_steps}")
+        if self.batch_size % self.accumulation_steps:
+            raise ValueError(
+                f"batch_size {self.batch_size} is not divisible by accumulation_steps "
+                f"{self.accumulation_steps}; the effective batch would not be what you asked for"
+            )
+
+    @property
+    def micro_batch(self) -> int:
+        """Rows per forward pass.
+
+        ``batch_size`` is the *effective* batch — the number of examples each
+        optimiser step learns from. Accumulation splits it into micro-batches to
+        fit in memory, and must not change what the step computes.
+        """
+        return self.batch_size // self.accumulation_steps
 
 
 @dataclass
@@ -96,12 +120,19 @@ def train(
     config: TrainConfig,
     on_event: Callable[[dict], None] | None = None,
     keep_best: bool = True,
+    checkpoint_dir: Path | str | None = None,
+    resume: bool = False,
 ) -> TrainResult:
     """Train, tracking the best held-out checkpoint.
 
     ``keep_best`` restores the best-scoring weights into ``model`` at the end, so
     the caller receives the checkpoint the metrics describe rather than whatever
     the last step happened to produce.
+
+    ``checkpoint_dir`` with ``config.checkpoint_every`` writes resumable
+    checkpoints; ``resume=True`` continues from the most recent one. A resumed
+    run reproduces an uninterrupted one exactly — see
+    ``test_resume_reproduces_an_uninterrupted_run``.
     """
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
@@ -122,33 +153,62 @@ def train(
     rng = np.random.default_rng(config.seed)
     result = TrainResult()
     best_state: dict | None = None
+    checkpoint_root = Path(checkpoint_dir) if checkpoint_dir else None
+    start_step = 0
+    elapsed_offset = 0.0
+
+    if resume and checkpoint_root is not None:
+        latest = _latest_checkpoint(checkpoint_root)
+        if latest is not None:
+            restored = load_checkpoint(latest, model, optimiser, rng)
+            start_step = restored.step + 1
+            result.best_bpb = restored.best_bpb
+            result.best_step = restored.best_step
+            elapsed_offset = restored.elapsed
+            # The best weights live on disk, not in this process's memory. Without
+            # reloading them, finishing a resumed run that never beats the old
+            # best would silently return the latest weights instead.
+            best_state = _load_best_weights(checkpoint_root, model)
+            if on_event:
+                on_event({"event": "resumed", "step": restored.step, "from": str(latest)})
+
     model.train()
     started = time.perf_counter()
 
-    for step in range(config.steps):
+    for step in range(start_step, config.steps):
         lr = lr_at(step, config.steps, config.lr, config.warmup)
         for group in optimiser.param_groups:
             group["lr"] = lr
 
-        x, y = train_sampler.batch(config.batch_size, rng)
-        _, loss = model(torch.from_numpy(x), torch.from_numpy(y))
-
+        # Accumulate over micro-batches, then take one step. Each micro-batch's
+        # loss is divided by the accumulation count so the summed gradient equals
+        # the gradient of the mean over the full effective batch — without that
+        # division the effective learning rate silently scales with accumulation.
         optimiser.zero_grad(set_to_none=True)
-        loss.backward()
+        total_loss = 0.0
+        for _ in range(config.accumulation_steps):
+            x, y = train_sampler.batch(config.micro_batch, rng)
+            _, loss = model(torch.from_numpy(x), torch.from_numpy(y))
+            (loss / config.accumulation_steps).backward()
+            total_loss += loss.item() / config.accumulation_steps
+
         grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
         optimiser.step()
-        result.final_train_loss = loss.item()
+        result.final_train_loss = total_loss
 
         if step % config.log_every == 0 or step == config.steps - 1:
-            elapsed = time.perf_counter() - started
-            result.tokens_per_sec = (step + 1) * config.batch_size * train_sampler.seq_len / elapsed
+            elapsed = elapsed_offset + time.perf_counter() - started
+            done = step - start_step + 1
+            per_step = (time.perf_counter() - started) / done
+            result.tokens_per_sec = config.batch_size * train_sampler.seq_len / per_step
             record = {
                 "step": step,
-                "loss": loss.item(),
+                "loss": total_loss,
                 "lr": lr,
                 "grad_norm": grad_norm.item(),
                 "tokens_per_sec": result.tokens_per_sec,
                 "elapsed": elapsed,
+                "eta_seconds": (config.steps - step - 1) * per_step,
             }
             result.history.append(record)
             if on_event:
@@ -163,11 +223,64 @@ def train(
             if stats["val_bpb"] < result.best_bpb:
                 result.best_bpb = stats["val_bpb"]
                 result.best_step = step
-                if keep_best:
-                    best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+                best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+                if checkpoint_root is not None:
+                    _save_best_weights(checkpoint_root, model)
+
+        if (
+            checkpoint_root is not None
+            and config.checkpoint_every
+            and (step + 1) % config.checkpoint_every == 0
+        ):
+            save_checkpoint(
+                checkpoint_root / f"step-{step}",
+                model,
+                optimiser,
+                step=step,
+                rng=rng,
+                best_bpb=result.best_bpb,
+                best_step=result.best_step,
+                elapsed=elapsed_offset + time.perf_counter() - started,
+            )
+            rotate_checkpoints(checkpoint_root, keep=config.keep_last)
 
     if keep_best and best_state is not None:
         model.load_state_dict(best_state)
 
-    result.seconds = time.perf_counter() - started
+    result.seconds = elapsed_offset + time.perf_counter() - started
     return result
+
+
+def _latest_checkpoint(root: Path) -> Path | None:
+    if not root.exists():
+        return None
+    candidates = []
+    for path in root.glob("step-*"):
+        if path.is_dir():
+            try:
+                candidates.append((int(path.name.rsplit("-", 1)[-1]), path))
+            except ValueError:
+                continue
+    return max(candidates)[1] if candidates else None
+
+
+def _save_best_weights(root: Path, model) -> None:
+    from safetensors.torch import save_model
+
+    root.mkdir(parents=True, exist_ok=True)
+    save_model(model, str(root / "best.safetensors"))
+
+
+def _load_best_weights(root: Path, model) -> dict | None:
+    """Read the best weights back without disturbing the live model."""
+    from safetensors.torch import load_file
+
+    path = root / "best.safetensors"
+    if not path.exists():
+        return None
+    stored = load_file(str(path))
+    # save_model drops one side of a tied pair; fill it back from the model's own
+    # state dict so load_state_dict gets a complete mapping.
+    complete = {k: v.detach().clone() for k, v in model.state_dict().items()}
+    complete.update(stored)
+    return complete
