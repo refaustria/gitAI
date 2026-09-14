@@ -68,6 +68,106 @@ in Phase 5.
 
 ---
 
+## R10 — The loop works, and rediscovers its own constraints
+
+**Date:** 2026-09-14 · **Reproduce:** `python scripts/run_loop.py --iterations 25`
+· 25 iterations, 11.4 min, plus a compute-matched control
+
+The first real run of the Phase 8 loop: an under-trained incumbent (150 steps),
+25 iterations of propose → generate → filter → train → evaluate → gate → record,
+with promotion gated on held-out real data the loop cannot influence.
+
+### It improves, and it beats a compute-matched control
+
+| | val BPB |
+|---|---:|
+| starting incumbent (150 steps) | ~2.17 |
+| **loop, 25 iterations** (2150 accumulated steps) | **1.8581** |
+| plain training, 2150 steps — *the control* | 1.8771 |
+| **difference** | **+0.0190 = 4.7× the noise floor** |
+
+The control matters more than the headline. Without it the loop's improvement
+proves nothing: its incumbent accumulated 2150 training steps, so "it got
+better" could simply mean "it trained longer". This project's own
+[evaluation.md](evaluation.md) insists on compute-matched rather than
+step-matched comparison, and the first draft of this result did not have one.
+
+**Caveats on that 0.0190, both real:**
+
+- **n = 1 for each arm.** The difference is 4.7× the measured noise floor, so it
+  is outside plausible seed variance — but a single run against a single run
+  cannot be certified. Multiple seeds are the honest next step.
+- **"Compute-matched" here means training steps, not wall-clock.** The loop took
+  11.4 minutes against roughly 4 for the control, because generation and
+  evaluation are not free. Per unit of *time*, the loop is behind. It buys its
+  advantage with search, and search costs.
+
+### The arc is the right shape
+
+Nine promotions in the first ten iterations (2.17 → 1.86), then **fourteen
+consecutive rejections**, then one further improvement at iteration 24. Overall
+promotion rate 40%.
+
+A loop that plateaus and refuses rather than drifting upward on noise is the
+promotion gate doing exactly its job. Every one of the 15 rejections was
+`no_regression` — the candidate was worse than the incumbent and did not get in.
+
+### The loop rediscovered R6–R9 on its own
+
+| synthetic fraction | rejected |
+|---:|---:|
+| 0% | 4/10 (40%) |
+| 25% | 4/7 (57%) |
+| **50%** | **7/8 (88%)** |
+
+Monotonic. **Nobody told the loop that synthetic data hurts.** It found out by
+having its candidates refused, and the rejection pattern reproduces the
+dose-response relationship [R9](#r9--a-little-real-data-does-almost-all-the-work)
+measured directly.
+
+This is the clearest vindication of a design decision made back in
+[self-improvement.md](self-improvement.md): *rejections are recorded, not
+discarded, because they are the research data*. A loop that logged only its
+promotions would have produced the same model and none of this.
+
+### Induction never appeared
+
+All 25 iterations scored between **−0.52 and −0.87 bits** — negative throughout,
+never once positive. A negative score means the second copy of a repeated random
+sequence is *harder* to predict than the first.
+
+So a 1M-parameter model trained on 373k tokens of Shakespeare appears to form
+**no induction circuit at all**, and gets progressively more confused by a long
+run of random tokens instead. That is a concrete data point for
+[Decision 12's question D](decisions.md#12-research-question), and held-out loss
+alone would never have surfaced it — which was the argument for having
+capability probes in the first place.
+
+Whether induction emerges at larger scale, more data, or more layers is exactly
+the question worth asking next.
+
+### Filtering did little here
+
+The filter removed 0–3% of generated documents per iteration. At temperature
+0.9–1.1 the generated corpora are not degenerate — consistent with
+[R7](#r7--sampling-temperature-selects-the-collapse-failure-mode-), which found
+narrowing only at low temperature or under top-k truncation. The search space
+does not offer those regimes, so the filter had little to do. It would earn its
+place in a space that did.
+
+### Limitations
+
+- **One run, one seed.** Everything above is a single trajectory.
+- **Random search over 18 candidates, 25 draws** — the space was sampled roughly
+  1.4 times over, so late iterations were largely re-testing.
+- **The incumbent was deliberately under-trained** so the loop had headroom.
+  Starting from a converged model would give a very different and probably much
+  duller picture.
+- **The wall-clock comparison is unfavourable** and is not something the
+  step-matched framing should be allowed to hide.
+
+---
+
 ## R9 — A little real data does almost all the work
 
 **Date:** 2026-09-14 · **Pre-registered:** [lab-notebook E6](lab-notebook.md#e6--is-it-the-fraction-of-real-data-or-the-amount)

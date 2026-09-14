@@ -22,7 +22,7 @@ research. Rationale for the choices below lives in
 | [5](#phase-5--research) | Research | first result |
 | [6](#phase-6--scale-up) | Scale-up (optional) | 1–2 weeks |
 | [7](#phase-7--inference--write-up) | Inference & write-up | 1–2 weeks |
-| [8](#phase-8--the-self-improvement-loop) | The self-improvement loop | built, demo pending |
+| [8](#phase-8--the-self-improvement-loop) | The self-improvement loop | demonstrated |
 
 ---
 
@@ -346,7 +346,10 @@ Phase 5 runs the manual, single-variable version of that; Phase 8 automates it.
 *Goal: the loop from [self-improvement.md](docs/self-improvement.md), running
 unattended and bounded, answering question F.*
 
-**Status: the loop is built and tested; the demonstration run is still to come.**
+**Status: built, tested, and demonstrated** — see [R10](docs/results.md).
+25 iterations improved an under-trained incumbent from ~2.17 to 1.8581 BPB and
+beat a compute-matched control by 4.7x the noise floor. Its rejection pattern
+reproduced R6-R9 without being told.
 Its central design question was answered first, by R6-R8 — which is what Phase 5
 was for. The strongest expression of that: the loop *cannot* propose a
 synthetic-only corpus, because `SearchSpace` refuses to contain the regime R8
@@ -362,12 +365,12 @@ measured collapsing to 4.53 BPB.
 - [x] `SearchSpace` — declared, bounded, and **it cannot contain the collapse regime**: R8 encoded as a construction-time refusal rather than something the gate must catch
 - [x] `SearchSpace.sample()` — random search over the declared grid, validated on the way *in* as well as out
 - [x] `generate()` — incumbent's own output, tagged at birth
-- [ ] `filter()` — quality, dedup, length; rejects retained, never deleted (not yet wired into the loop)
+- [x] `filter()` — quality, dedup, near-duplicate removal on the generated half; rejects retained (capped sample, complete counts)
 - [x] **Real data in every corpus** — enforced by the search space's `min_real_fraction`, not by convention
 - [x] `real_data_fraction` and `corpus_stats` passed into every gate call to judge correctly
 - [x] `train()` — warm-started from the incumbent, bounded steps
 - [x] `evaluate()` — held-out BPB, seeds configurable
-- [ ] Wire the capability probes into the loop's evaluation
+- [x] Induction probe measured every iteration and recorded in the lineage
 - [x] `gate()` — `InvariantSuite`, fail-closed
 - [x] `record()` — both outcomes, with the invariant that refused
 - [x] Halt and budget checked at every boundary, before and after each phase
@@ -376,13 +379,14 @@ measured collapsing to 4.53 BPB.
 
 ### The experiment
 
-- [ ] Baseline: N iterations with **no** synthetic data — the control
+- [x] **Compute-matched control** — plain training at the loop's accumulated step count. The loop wins by 0.019 BPB (4.7x noise floor), though at ~3x the wall-clock
 - [ ] Arm 1: **replace** real data with synthetic each round
 - [ ] Arm 2: **accumulate** real + synthetic each round
-- [ ] Measure the collapse boundary: where do rejections start clustering?
-- [ ] Confirm the headline prediction: training loss keeps falling while held-out BPB rises
+- [x] Rejections cluster monotonically in synthetic fraction (40% / 57% / 88%) — the loop rediscovered R6-R9 unprompted
+- [x] Confirmed in R7, at low sampling temperature — the loop's own space excludes that regime by design
+- [ ] Multiple seeds for the loop-vs-control comparison — n=1 each cannot certify 0.019 BPB
 - [ ] Vary synthetic fraction, filter aggressiveness, generation temperature
-- [ ] Write up in `docs/results.md`, negative results included
+- [x] Written up as [R10](docs/results.md), including that induction never appeared and the wall-clock comparison is unfavourable
 
 ### Operational
 
