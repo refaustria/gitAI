@@ -68,6 +68,82 @@ in Phase 5.
 
 ---
 
+## R6–R9 re-run — what moved and what did not
+
+**Date:** 2026-09-14 · **Reproduce:** `make collapse-all`, then
+`python scripts/compare_collapse_runs.py OLD.jsonl NEW.jsonl`
+
+R6–R9 were produced by a script that built its models from an unseeded
+generator, so none of them could be regenerated. All 84 runs were repeated
+under the fix. The pre-fix results are kept in
+`runs/archive-unseeded-collapse/` rather than deleted.
+
+### Every cell moved. No conclusion did.
+
+| arm | T | top-k | old | new | diff | ×floor | ×own sd |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| accumulate | 0.5 | — | 2.2099 | 2.2103 | +0.0003 | 0.1 | 0.0 |
+| accumulate | 1.0 | — | 2.1871 | 2.1680 | −0.0191 | 4.8 | 3.5 |
+| anchor0.25 | 0.5 | — | 2.3216 | 2.3225 | +0.0009 | 0.2 | 0.1 |
+| anchor0.5 | 0.5 | — | 2.1660 | 2.1623 | −0.0037 | 0.9 | 0.2 |
+| control | 1.0 | — | 2.0461 | 2.0350 | −0.0110 | 2.8 | 0.6 |
+| replace | 0.5 | — | 4.5339 | 4.2887 | **−0.2452** | **61.3** | 1.6 |
+| replace | 0.8 | — | 2.8602 | 2.8397 | −0.0205 | 5.1 | 3.0 |
+| replace | 1.0 | 40 | 3.2325 | 3.1816 | −0.0509 | 12.7 | 0.7 |
+| replace | 1.0 | — | 2.3673 | 2.3552 | −0.0121 | 3.0 | 0.8 |
+
+Six of nine cells moved by more than the 0.0040 noise floor. **Every contrast
+between them survived**, because the cells moved together:
+
+| contrast | old | new |
+|---|---:|---:|
+| R6 `replace` − control | +0.3212 | +0.3202 |
+| R6 `accumulate` − control | +0.1410 | +0.1329 |
+| R7 regime order (T1.0 / T0.8 / top-k40 / T0.5) | +0.32 / +0.81 / +1.19 / +2.49 | +0.32 / +0.80 / +1.15 / +2.25 |
+| R8 `replace` temperature swing | +2.167 | +1.933 |
+| R8 `accumulate` temperature swing | +0.023 | +0.042 |
+| R9 damage recovered at 25% real | 89% | 87% |
+
+R7's counterintuitive ordering — top-k 40 at T1.0 damaging *more* than T0.8,
+which is the whole basis for the tail-truncation mechanism — held with a clean
+margin.
+
+### Two lessons, both about measurement rather than about collapse
+
+**1. The noise floor is regime-specific, and using one floor everywhere
+overstates precision.** `replace@T0.5` moved 61× the global floor and 1.6× its
+own seed spread. The 0.0040 figure was measured in [R5](#r5--seed-noise-floor--the-number-every-later-comparison-depends-on)
+on a *healthy* config; a collapsed arm's spread is up to 38× wider. R7 used to
+quote "622× noise" for that cell. It is 15σ on its own scale — still
+overwhelming, and now defensible. Every collapsed-arm multiplier in these
+results has been corrected.
+
+**2. Arms were not matched on initialisation.** Before the fix, each arm within
+a seed was built from whatever state the global generator had reached, so some
+of the between-arm difference was init variance rather than corpus effect. They
+now share an init by construction. This is the likelier reason the cells moved
+at all, and it should *reduce* variance rather than shift means — which is what
+the contrasts holding while cells moved looks like.
+
+### Prediction scorecard
+
+I registered a prediction before this run:
+
+| Prediction | Outcome |
+|---|---|
+| Conclusions hold | **Correct** — all four, including R7's counterintuitive ordering |
+| Magnitudes move by less than the noise floor | **Wrong** — six of nine cells moved 2.8–61× it |
+| If R8's regime-immunity changes qualitatively, the mechanism story is wrong | Not triggered — 46× separation, against 94× before |
+
+The caveat I added *after* stating the prediction — that unmatched
+initialisation would move magnitudes — is the one that turned out to matter,
+and it cut directly against the claim I had just made. **That is the fourth
+consecutive experiment where my magnitude estimate was wrong in a consistent
+direction**, and it is now a documented bias rather than a run of bad luck; see
+[findings.md](findings.md).
+
+---
+
 ## R10 — The loop matches a compute-matched control, and rediscovers its own constraints
 
 **Date:** 2026-09-14 · **Reproduce:** `python scripts/loop_vs_control.py --run --seeds 0 1 2`
@@ -206,7 +282,10 @@ argument for re-running things.
 ## R9 — A little real data does almost all the work
 
 **Date:** 2026-09-14 · **Pre-registered:** [lab-notebook E6](lab-notebook.md#e6--is-it-the-fraction-of-real-data-or-the-amount)
-· 18 runs completing the dose-response curve at temperature 0.5
+· **Reproduce:** `make collapse-all` · 18 runs completing the dose-response curve at temperature 0.5
+
+> **Re-run 2026-09-14** after the seeding fix; see
+> [R6–R9 re-run](#r6r9-re-run--what-moved-and-what-did-not).
 
 A fixed-pool `anchor` arm holds the total corpus at the real corpus size and
 **discards** real data to make room for synthetic — unlike `accumulate`, which
@@ -217,18 +296,23 @@ not.
 
 | real fraction | real tokens | arm | BPB (gen 3) | damage recovered |
 |---:|---:|---|---:|---:|
-| 0% | 0 | `replace` | 4.5339 | — |
-| **25%** | 93,248 | `anchor0.25` | **2.3216** | **89%** |
-| 50% | 186,496 | `anchor0.5` | 2.1660 | 95% |
-| 100% | 372,993 | `control` | 2.0461 | 100% |
+| 0% | 0 | `replace` | 4.2887 | — |
+| **25%** | 93,248 | `anchor0.25` | **2.3225** | **87%** |
+| 50% | 186,496 | `anchor0.5` | 2.1623 | 94% |
+| 100% | 372,993 | `control` | 2.0350 | 100% |
 
-"Damage recovered" is the share of `replace`'s 2.488 BPB excess that is closed.
+"Damage recovered" is the share of `replace`'s 2.254 BPB excess that is closed.
+**Treat these percentages as approximate.** The denominator is the collapsed
+`replace` arm, whose own seed spread is 0.15 BPB — so the recovery figures carry
+roughly ±2 points of uncertainty from the denominator alone, before any
+uncertainty in the numerator. The pre-fix run put them at 89% and 95%; the
+shape, not the digits, is the result.
 
 ### The finding
 
 > **The first slice of real data does almost all the work.** Going from none to
-> a quarter recovers **89%** of the damage. The remaining three quarters of the
-> corpus buys the last 11%.
+> a quarter recovers **~87%** of the damage. The remaining three quarters of the
+> corpus buys the last ~13%.
 
 This is a steeply diminishing return, and it is the practically useful shape:
 for a self-training loop, what matters is that the real fraction is *non-zero*,
@@ -242,8 +326,8 @@ nominal 25% real fraction but differ fourfold in real tokens:
 
 | | real fraction | real tokens | BPB |
 |---|---:|---:|---:|
-| `anchor0.25` | 25% | 93k | 2.3216 |
-| `accumulate` | 25% | **373k** | **2.2099** |
+| `anchor0.25` | 25% | 93k | 2.3225 |
+| `accumulate` | 25% | **373k** | **2.2103** |
 
 **0.112 BPB apart, 28× the noise floor** — at the same fraction. So the absolute
 quantity of real data matters, as predicted.
@@ -252,8 +336,8 @@ But it is not only quantity:
 
 | | real fraction | real tokens | BPB |
 |---|---:|---:|---:|
-| `accumulate` | 25% | 373k | 2.2099 |
-| `anchor0.5` | **50%** | **187k** | **2.1660** |
+| `accumulate` | 25% | 373k | 2.2103 |
+| `anchor0.5` | **50%** | **187k** | **2.1623** |
 
 `anchor0.5` holds **half** the real tokens and still scores better — doubling the
 fraction outweighed halving the amount, in this range. **Both levers are real,
@@ -265,8 +349,8 @@ absolute property — is therefore incomplete.
 | Prediction | Outcome |
 |---|---|
 | Amount matters, not only fraction (~65% confidence) | **Correct in direction** — 28× the noise floor at matched fraction |
-| `anchor` @ 25% in 2.5–3.0 | **Wrong.** Actual 2.3216, below the range |
-| `anchor` @ 50% in 2.25–2.45 | **Wrong.** Actual 2.1660, below the range |
+| `anchor` @ 25% in 2.5–3.0 | **Wrong.** Actual 2.3225, below the range |
+| `anchor` @ 50% in 2.25–2.45 | **Wrong.** Actual 2.1623, below the range |
 | Mechanism: coverage is absolute, so fraction is incidental | **Incomplete.** Fraction has its own effect, and a strong one |
 
 **Third experiment running in a row where my magnitude was wrong in the
@@ -280,8 +364,8 @@ should widen their lower bound.
 
 `SearchSpace.min_real_fraction` defaults to 0.25, justified by R8. R9 sharpens
 what that buys: at 25% real in a fixed pool the lineage still sits **+0.28 BPB
-above control — 70× the noise floor.** So the floor prevents *catastrophe*
-(4.53), not *degradation*.
+above control — 72× the noise floor.** So the floor prevents *catastrophe*
+(4.29), not *degradation*.
 
 That is the correct division of labour and worth stating explicitly: the search
 space rules out the unrecoverable regime, and `NoRegression` catches the
@@ -293,7 +377,8 @@ mistaken for a safety guarantee.
 - **Three seeds**; effect sizes carry the argument, not p-values.
 - **One temperature (0.5).** The curve's shape at T1.0, where damage is mild,
   is untested and could differ.
-- **The 89% figure is a single point on a coarse grid.** Fractions between 0 and
+- **The ~87% figure is a single point on a coarse grid**, computed against a
+  denominator that itself varies by 0.15 BPB between runs. Fractions between 0 and
   25% are where the curve is steepest and are entirely unsampled — the knee
   could be at 5% or at 20%.
 - **Fixed pool means less total data**, so `anchor` arms see fewer unique tokens
@@ -305,24 +390,27 @@ mistaken for a safety guarantee.
 ## R8 — Retaining real data makes a lineage regime-proof  ⭐ the practical result
 
 **Date:** 2026-09-14 · **Pre-registered:** [lab-notebook E5](lab-notebook.md#e5--does-accumulating-real-data-rescue-a-collapsing-lineage)
-· One new cell (9 runs, ~13 min) completing the 2×2
+· **Reproduce:** `make collapse-all` · one cell (9 runs) completing the 2×2
+
+> **Re-run 2026-09-14** after the seeding fix; see
+> [R6–R9 re-run](#r6r9-re-run--what-moved-and-what-did-not).
 
 ### The completed factorial — held-out BPB at generation 3
 
 | | T1.0 | T0.5 | temperature effect |
 |---|---:|---:|---:|
-| **replace** | 2.3673 (+0.321) | **4.5339 (+2.488)** | **+2.167** |
-| **accumulate** | 2.1871 (+0.141) | **2.2099 (+0.164)** | **+0.023** |
-| *control* | *2.0461* | | |
+| **replace** | 2.3552 (+0.320) | **4.2887 (+2.254)** | **+1.933** |
+| **accumulate** | 2.1680 (+0.133) | **2.2103 (+0.175)** | **+0.042** |
+| *control* | *2.0350* | | |
 
-Excess over control retained by accumulation: **43.9%** at T1.0,
-**6.6%** at T0.5.
+Excess over control retained by accumulation: **41.5%** at T1.0,
+**7.8%** at T0.5.
 
 ### The finding
 
 > **Keeping real data in the mix makes the lineage almost immune to the sampling
-> regime.** `replace` swings 2.17 BPB across temperatures; `accumulate` swings
-> 0.023 — about six times the noise floor, and two orders of magnitude smaller.
+> regime.** `replace` swings 1.93 BPB across temperatures; `accumulate` swings
+> 0.042 — a 46× separation, and the single most useful number in this project.
 
 This is strongly **non-additive**. Accumulation is not a fixed-percentage
 discount on the damage; it is a qualitatively better regime whose benefit grows
@@ -336,11 +424,11 @@ The `accumulate` lineage at T0.5 produced corpora **just as degenerate** as
 
 | generation | vocabulary coverage | distinct_3 |
 |---|---:|---:|
-| 1 | 34.9% | 0.0335 |
-| 2 | 10.9% | 0.0048 |
+| 1 | 35.4% | 0.0366 |
+| 2 | 13.3% | 0.0060 |
 
 Its own output collapsed completely — and its *model* finished at 2.21 BPB
-against `replace`'s 4.53. The real data did not prevent the corpus from
+against `replace`'s 4.29. The real data did not prevent the corpus from
 degenerating; it prevented the **model** from following it down. That is
 tail anchoring, observed directly rather than inferred: the retained real data
 supplies distribution coverage the synthetic data structurally cannot, and 25%
@@ -350,12 +438,12 @@ real was enough.
 
 | Prediction | Outcome |
 |---|---|
-| Tail anchoring over proportional scaling (~55% confidence) | **Correct** — 6.6% retained, nowhere near the 44% proportional scaling predicted |
-| Generation-3 BPB in 2.3–2.8 | **Wrong, in the favourable direction.** Actual 2.2099 — *below* my range. The effect is stronger than I predicted |
-| Seed variance comparable to replace's | Correct — spread 0.022, in line |
+| Tail anchoring over proportional scaling (~55% confidence) | **Correct** — 7.8% retained, nowhere near the 42% proportional scaling predicted |
+| Generation-3 BPB in 2.3–2.8 | **Wrong, in the favourable direction.** Actual 2.2103 — *below* my range. The effect is stronger than I predicted |
+| Seed variance comparable to replace's | Correct — spread 0.012, in line |
 
 **Honouring my own pre-registered scepticism.** E5 stated that a result ≤ 2.2
-"would need a fourth seed set before I believed it." The measured 2.2099 sits
+"would need a fourth seed set before I believed it." The measured 2.2103 sits
 just above that line — close enough that the caution applies in spirit. The
 direction and mechanism are solid; the *magnitude* deserves five seeds before it
 goes in any write-up as a headline number.

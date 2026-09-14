@@ -127,11 +127,23 @@ before it ran. The record:
 | E4 (temperature) | 3 of 3 | Weak test: the mechanism was half-known from E3 before these were written |
 | E5 (accumulation) | mechanism right, **magnitude wrong** | Predicted 2.3–2.8, measured 2.21 |
 | E6 (dose-response) | direction right, **mechanism incomplete, magnitude wrong** | Predicted 2.5–3.0, measured 2.32 |
+| R6–R9 re-run | conclusions right, **magnitude wrong** | Predicted all cells move < 0.0040; six of nine moved 2.8–61× that |
 
-**A systematic bias, named rather than buried:** three experiments running, my
-magnitude predictions were wrong in the *same* direction. I consistently
-**over-estimated how much damage self-training does once any real data is
-present.** Directions held up; sizes did not.
+**A systematic bias, named rather than buried:** four experiments running, my
+magnitude predictions were wrong in the *same* direction — I under-estimate how
+much a number can move while its meaning stays put. In E5 and E6 that showed up
+as **over-estimating how much damage self-training does once any real data is
+present**; in the re-run it showed up as over-estimating the stability of
+individual cells. Directions and mechanisms have held every time. Sizes have
+not held once.
+
+The re-run is the sharpest instance, because I falsified it myself within the
+same breath. Having predicted "magnitudes move less than the noise floor", I
+immediately added a caveat — that arms had not shared an initialisation, so some
+archived variance was init noise — which directly contradicted the prediction I
+had just made. The caveat was right. **The lesson is not to predict better; it
+is that a stated prediction plus an honest caveat beats a confident prediction,
+and the caveat should have replaced the claim rather than trailing it.**
 
 **The strongest argument for pre-registration in this project** is E3. Predictions
 4 and 5 were both downstream of assuming classic model collapse. Had I not

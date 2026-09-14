@@ -48,7 +48,7 @@ from gitai.training import evaluate_bpb
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# Measured across same-config seeds in R2; see docs/results.md. Using these
+# Measured across same-config seeds in R5; see docs/results.md. Using these
 # groups' own spread to judge themselves would be circular at three seeds.
 NOISE_FLOOR = 0.0040
 

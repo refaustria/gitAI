@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# R2's measured same-config seed spread; see docs/results.md.
+# R5's measured same-config seed spread; see docs/results.md.
 NOISE_FLOOR = 0.0040
 
 # scripts/collapse_experiment.py --temperature default, unchanged since it existed.
