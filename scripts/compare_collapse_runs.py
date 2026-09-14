@@ -28,6 +28,9 @@ ROOT = Path(__file__).resolve().parent.parent
 # R2's measured same-config seed spread; see docs/results.md.
 NOISE_FLOOR = 0.0040
 
+# scripts/collapse_experiment.py --temperature default, unchanged since it existed.
+DEFAULT_TEMPERATURE = 1.0
+
 
 def load(path: Path, generation: int | None) -> dict[tuple, list[float]]:
     cells: dict[tuple, list[float]] = defaultdict(list)
@@ -39,9 +42,20 @@ def load(path: Path, generation: int | None) -> dict[tuple, list[float]]:
             continue
         if r["arm"] == "generation0":
             continue
-        cells[(r["arm"], r.get("temperature"), r.get("top_k"), r.get("real_fraction"))].append(
-            r["val_bpb"]
-        )
+        # The earliest rows predate `record()` stamping the sampling regime, so
+        # they carry no temperature key at all. Those runs were made at the
+        # script default, which has always been 1.0 -- so a missing or null
+        # temperature means 1.0, and normalising it here is what lets a file
+        # written before that change be compared against one written after.
+        temperature = r.get("temperature")
+        cells[
+            (
+                r["arm"],
+                DEFAULT_TEMPERATURE if temperature is None else temperature,
+                r.get("top_k"),
+                r.get("real_fraction"),
+            )
+        ].append(r["val_bpb"])
     return cells
 
 
