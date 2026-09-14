@@ -37,8 +37,18 @@ EOT = "<|endoftext|>"
 
 
 def split_into_documents(text: str, corpus: str) -> list[str]:
-    """Blank lines separate documents in both corpora we ship with."""
-    chunks = text.split("\n\n") if corpus == "tinyshakespeare" else text.split("\n\n\n")
+    """Split a raw corpus into documents.
+
+    Corpora do not agree on how documents are separated, and guessing wrong is
+    expensive but silent: TinyStories uses an explicit ``<|endoftext|>`` marker,
+    and splitting it on blank lines instead yields 2,629 enormous documents
+    where there should be 27,631 — each one dozens of unrelated stories glued
+    together. Nothing errors; the corpus is simply wrong.
+
+    So the marker is checked for first, and blank-line splitting is the fallback
+    for corpora like TinyShakespeare that have no explicit separator.
+    """
+    chunks = text.split(EOT) if EOT in text else text.split("\n\n")
     return [c.strip() for c in chunks if c.strip()]
 
 

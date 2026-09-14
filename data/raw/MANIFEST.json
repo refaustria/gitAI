@@ -11,6 +11,18 @@
       "sha256": "86c4e6aa9db7c042ec79f339dcb96d42b0075e16b8fc2e86bf0ca57e2dc565ed",
       "stage": 0,
       "url": "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
+    },
+    "tinystories-valid": {
+      "actual_bytes": 22502601,
+      "description": "TinyStories validation split (~20MB). Useful for pipeline testing at real scale.",
+      "expected_bytes": null,
+      "licence": "CDLA-Sharing-1.0 \u2014 check current terms at the dataset page before redistributing",
+      "local_path": "tinystories-valid.txt",
+      "name": "tinystories-valid",
+      "retrieved_at": "2026-09-14T13:39:13+00:00",
+      "sha256": "6874bae9a4c1a4e7edcf0e53b86c17817e9cf881fc75ff2368da457b80c0585d",
+      "stage": 1,
+      "url": "https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-valid.txt"
     }
   },
   "version": 1

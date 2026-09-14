@@ -1,4 +1,4 @@
-.PHONY: help setup test test-fast lint fmt typecheck bench demo data data-sweep train inspect eval report noise-floor collapse collapse-temps halt clean
+.PHONY: help setup test test-fast lint fmt typecheck bench demo data data-tinystories data-sweep train inspect eval report noise-floor collapse collapse-temps halt clean
 
 help:
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -36,6 +36,9 @@ typecheck:  ## static types
 
 data:  ## raw corpus -> curated parquet -> tokenizer -> shards
 	.venv/bin/python scripts/prepare_data.py --corpus tinyshakespeare --vocab-size 2048
+
+data-tinystories:  ## fetch and prepare TinyStories (~2GB download, the real corpus)
+	.venv/bin/python scripts/prepare_data.py --corpus tinystories --vocab-size 4096
 
 data-sweep:  ## compare vocabulary sizes (the Decision 4 measurement)
 	.venv/bin/python scripts/prepare_data.py --corpus tinyshakespeare --sweep

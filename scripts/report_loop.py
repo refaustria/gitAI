@@ -71,6 +71,7 @@ def main() -> None:
     print("=" * 72)
     print("iterations")
     print("=" * 72)
+
     def cell(value, spec: str) -> str:
         return "-" if value is None else format(value, spec)
 
