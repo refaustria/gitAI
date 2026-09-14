@@ -404,21 +404,31 @@ matters.
 ## R7 — Sampling temperature selects the collapse failure mode  ⭐
 
 **Date:** 2026-09-14 · **Pre-registered:** [lab-notebook E4](lab-notebook.md#e4--does-sampling-temperature-select-the-collapse-failure-mode)
-· **Reproduce:** `make collapse-temps` · 27 runs, ~35 min
+· **Reproduce:** `make collapse-all` · 27 runs
+
+> **Re-run 2026-09-14** after the seeding fix; see
+> [R6–R9 re-run](#r6r9-re-run--what-moved-and-what-did-not).
 
 The `replace` arm only, at four sampling regimes, 3 generations × 3 seeds each.
 Everything else identical to [R6](#r6--model-collapse-does-self-training-degrade-a-small-lm--the-headline-result),
 so the sampling regime is the single independent variable. `control` never
-generates, so it is regime-independent and reused (2.046 at generation 3).
+generates, so it is regime-independent and reused (2.035 at generation 3).
 
 ### Held-out BPB on real data
 
-| regime | gen 1 | gen 2 | gen 3 | drift | vs control |
-|---|---:|---:|---:|---:|---:|
-| **T0.5** | 2.6850 | 3.7643 | **4.5339** | +1.849 | **+2.49** (622× noise) |
-| T1.0 + top-k 40 | 2.6805 | 3.0093 | 3.2325 | +0.552 | +1.19 (297× noise) |
-| T0.8 | 2.2298 | 2.4870 | 2.8602 | +0.630 | +0.81 (203× noise) |
-| T1.0 | 2.1995 | 2.2955 | 2.3673 | +0.168 | +0.32 (80× noise) |
+| regime | gen 1 | gen 2 | gen 3 | drift | vs control | own sd (g3) |
+|---|---:|---:|---:|---:|---:|---:|
+| **T0.5** | 2.6742 | 3.7377 | **4.2887** | +1.615 | **+2.25** | 0.151 |
+| T1.0 + top-k 40 | 2.6784 | 3.0013 | 3.1816 | +0.503 | +1.15 | 0.068 |
+| T0.8 | 2.2207 | 2.4784 | 2.8397 | +0.619 | +0.80 | 0.007 |
+| T1.0 | 2.1862 | 2.2814 | 2.3552 | +0.169 | +0.32 | 0.015 |
+
+The last column replaces the "×noise floor" multipliers this table used to
+carry. The 0.0040 floor was measured on a *healthy* config; a collapsed arm's
+own seed spread is up to 38× wider, so quoting its excess in floor-units
+("622× noise") overstated the precision badly. Every row is still many of its
+own standard deviations above control — T0.5 is 15σ — but that is the honest
+scale.
 
 ### The finding
 
@@ -426,7 +436,7 @@ generates, so it is regime-independent and reused (2.046 at generation 3).
 > sampling.**
 
 Top-k 40 at temperature 1.0 degrades the model *more* than temperature 0.8 does
-(+1.19 vs +0.81 against control), despite leaving the temperature untouched.
+(+1.15 vs +0.80 against control), despite leaving the temperature untouched.
 Truncation and temperature act through the same channel — both discard the tails
 at generation time — and the resulting collapse tracks that, not the temperature
 parameter itself.
@@ -435,10 +445,10 @@ parameter itself.
 
 | regime | distinct_3 (g1) | vocabulary (g1) | training loss (g2) | BPB (g3) |
 |---|---:|---:|---:|---:|
-| T0.5 | 0.0375 | **36.9%** | **1.04** | 4.5339 |
-| T1.0 + top-k 40 | 0.3556 | 46.7% | 2.91 | 3.2325 |
-| T0.8 | 0.3746 | 80.6% | 2.88 | 2.8602 |
-| T1.0 | 0.7166 | **87.4%** | **4.44** | 2.3673 |
+| T0.5 | 0.0413 | **37.4%** | **1.10** | 4.2887 |
+| T1.0 + top-k 40 | 0.3529 | 47.6% | 2.90 | 3.1816 |
+| T0.8 | 0.3846 | 80.7% | 2.88 | 2.8397 |
+| T1.0 | 0.7184 | **87.4%** | **4.41** | 2.3552 |
 
 **Vocabulary coverage of the generated corpus at generation 1 predicts
 generation-3 BPB monotonically.** That is an early-warning signal: it is
@@ -446,18 +456,18 @@ measurable one full generation before the damage is visible in held-out loss,
 and it is cheap — no evaluation set required, just a token count over the corpus
 the loop already produced.
 
-At T0.5 the model emits **11.4% of its vocabulary** by generation 2 and scores
-4.53 BPB — **worse than the bigram baseline of 3.24**. A 1M-parameter
+At T0.5 the model emits **13.0% of its vocabulary** by generation 2 and scores
+4.29 BPB — **worse than the bigram baseline of 3.24**. A 1M-parameter
 transformer, trained on its own output for three rounds, ends up worse than a
-context-free lookup table. Even top-k 40 lands at 3.23, essentially *at* the
+context-free lookup table. Even top-k 40 lands at 3.18, essentially *at* the
 bigram floor.
 
 ### Lower training loss predicts worse real performance
 
 | regime | training loss (g2) | held-out BPB (g3) |
 |---|---:|---:|
-| T0.5 | 1.04 | 4.53 |
-| T1.0 | 4.44 | 2.37 |
+| T0.5 | 1.10 | 4.29 |
+| T1.0 | 4.41 | 2.36 |
 
 The regime that fits its training data **four times better** ends up **twice as
 bad** on real text. Across the extremes the relationship is a clean inversion.
@@ -526,7 +536,12 @@ dependent**, and R6's scorecard has been amended to say so.
 ## R6 — Model collapse: does self-training degrade a small LM?  ⭐ the headline result
 
 **Date:** 2026-09-14 · **Pre-registered:** [lab-notebook E3](lab-notebook.md#e3--does-a-self-training-loop-collapse-and-does-accumulation-prevent-it)
-· **Reproduce:** `make collapse` · 30 training runs, 15 corpus generations, 34.5 min
+· **Reproduce:** `make collapse-all` · 30 training runs, 15 corpus generations
+
+> **Re-run 2026-09-14** after a seeding bug was found in
+> `collapse_experiment.py` (see [R6-R9 re-run](#r6r9-re-run--what-moved-and-what-did-not)).
+> Numbers below are from the reproducible run; the pre-fix figures are archived
+> in `runs/archive-unseeded-collapse/`.
 
 Three arms differing **only** in what generation *n* trains on. Each generation
 is a freshly initialised model; what is inherited is the data, not the weights.
@@ -538,21 +553,21 @@ held-out **real** validation set.
 
 | gen | control | accumulate | replace |
 |---:|---:|---:|---:|
-| 1 | 2.0396 ±0.0092 | 2.1187 ±0.0086 | 2.1995 ±0.0144 |
-| 2 | 2.0450 ±0.0081 | 2.1543 ±0.0153 | 2.2955 ±0.0182 |
-| 3 | 2.0461 ±0.0118 | 2.1871 ±0.0054 | 2.3673 ±0.0158 |
-| **drift g1→g3** | **+0.0065** | **+0.0684** | **+0.1678** |
+| 1 | 2.0396 ±0.0092 | 2.0980 ±0.0103 | 2.1862 ±0.0079 |
+| 2 | 2.0417 ±0.0018 | 2.1394 ±0.0057 | 2.2814 ±0.0072 |
+| 3 | 2.0350 ±0.0171 | 2.1680 ±0.0011 | 2.3552 ±0.0149 |
+| **drift g1→g3** | **−0.0045** | **+0.0700** | **+0.1690** |
 
-Gap versus control at generation 3: `accumulate` **+0.1410** (35× noise floor),
-`replace` **+0.3212** (80× noise floor).
+Gap versus control at generation 3: `accumulate` **+0.1329** (33× noise floor),
+`replace` **+0.3202** (80× noise floor).
 
 ### The headline
 
 > **Self-training on your own output degrades a small language model,
 > substantially and reproducibly. Accumulating real data alongside synthetic
-> slows the degradation to ~41% of its rate but does not stop it.**
+> slows the degradation to ~42% of its rate but does not stop it.**
 
-Three independent seeds; `replace` lands at 2.3514 / 2.3676 / 2.3829 at
+Three independent seeds; `replace` lands at 2.3460 / 2.3472 / 2.3724 at
 generation 3. The effect replicates in magnitude and in per-generation
 increment, not merely in sign.
 
