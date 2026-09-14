@@ -248,6 +248,93 @@ class TestLoopBehaviour:
         after = loop.incumbent.state_dict()
         assert all(torch.equal(before[k], after[k]) for k in before)
 
+    def test_generated_documents_are_filtered_before_training(self, tmp_path, setup):
+        """R7 found corpus degeneracy driving collapse, so filtering the generated
+        half is a mitigation aimed at the measured mechanism."""
+        loop = build_loop(
+            tmp_path,
+            setup,
+            space=SearchSpace(
+                synthetic_fraction=(0.5,), temperature=(1.0,), lr=(3e-3,), steps=(5,)
+            ),
+        )
+        result = loop.run()
+        reports = [o.filter_report for o in result.iterations if o.filter_report]
+        assert reports, "synthetic iterations produced no filter report"
+        assert all("removed" in r and "by_stage" in r for r in reports)
+
+    def test_rejected_documents_are_retained_not_deleted(self, tmp_path, setup):
+        """The rejects are the record of what the model generates badly."""
+        loop = build_loop(
+            tmp_path,
+            setup,
+            space=SearchSpace(
+                synthetic_fraction=(0.5,), temperature=(1.0,), lr=(3e-3,), steps=(5,)
+            ),
+        )
+        result = loop.run()
+        removed = sum(o.filter_report["removed"] for o in result.iterations if o.filter_report)
+        if removed:
+            assert list((loop.workspace / "rejects").glob("iter-*.jsonl"))
+
+    def test_reject_retention_is_capped(self, tmp_path, setup):
+        """A long run must not fill the disk with rejects; the counts stay
+        complete even when the retained sample is truncated."""
+        loop = build_loop(
+            tmp_path,
+            setup,
+            space=SearchSpace(
+                synthetic_fraction=(0.5,), temperature=(1.0,), lr=(3e-3,), steps=(5,)
+            ),
+            config=LoopConfig(
+                iterations=1,
+                batch_size=4,
+                seq_len=32,
+                eval_batches=2,
+                gen_batch=8,
+                max_retained_rejects=2,
+            ),
+        )
+        loop.run()
+        for path in (loop.workspace / "rejects").glob("iter-*.jsonl"):
+            assert len(path.read_text().splitlines()) <= 2
+
+    def test_induction_is_measured_per_iteration(self, tmp_path, setup):
+        """Loss hides structure: two models at equal BPB can differ in capability."""
+        loop = build_loop(tmp_path, setup)
+        result = loop.run()
+        assert all(o.induction_bits is not None for o in result.iterations)
+        assert all("induction_bits" in e.payload for e in loop.lineage.entries())
+
+    def test_probes_can_be_switched_off(self, tmp_path, setup):
+        loop = build_loop(
+            tmp_path,
+            setup,
+            config=LoopConfig(
+                iterations=1,
+                batch_size=4,
+                seq_len=32,
+                eval_batches=2,
+                gen_batch=8,
+                measure_induction=False,
+            ),
+        )
+        result = loop.run()
+        assert all(o.induction_bits is None for o in result.iterations)
+
+    def test_real_only_iterations_skip_filtering(self, tmp_path, setup):
+        """There is nothing to filter when no synthetic data was generated, and
+        the real corpus was already curated in Phase 1."""
+        loop = build_loop(
+            tmp_path,
+            setup,
+            space=SearchSpace(
+                synthetic_fraction=(0.0,), temperature=(1.0,), lr=(3e-3,), steps=(5,)
+            ),
+        )
+        result = loop.run()
+        assert all(o.filter_report is None for o in result.iterations)
+
     def test_work_directories_are_cleaned_up(self, tmp_path, setup):
         loop = build_loop(tmp_path, setup)
         loop.run()

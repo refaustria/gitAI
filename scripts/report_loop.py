@@ -71,16 +71,36 @@ def main() -> None:
     print("=" * 72)
     print("iterations")
     print("=" * 72)
-    print(f"{'iter':>5} {'BPB':>9} {'synth':>7} {'temp':>6} {'lr':>9}  outcome")
-    print("-" * 72)
+    def cell(value, spec: str) -> str:
+        return "-" if value is None else format(value, spec)
+
+    header = (
+        f"{'iter':>5} {'BPB':>9} {'synth':>7} {'temp':>6} {'lr':>9} "
+        f"{'induct':>8} {'filt':>6}  outcome"
+    )
+    print(header)
+    print("-" * len(header))
     for row in iterations:
         proposal = row["proposal"]
         mark = "PROMOTED" if row["promoted"] else "rejected"
+        report = row.get("filter_report")
+        removed = report["removed_fraction"] if report else None
         print(
             f"{row['iteration']:>5} {row['val_bpb']:>9.4f} "
             f"{proposal['synthetic_fraction']:>7.0%} {proposal['temperature']:>6.2f} "
-            f"{proposal['lr']:>9.1e}  {mark}"
+            f"{proposal['lr']:>9.1e} "
+            f"{cell(row.get('induction_bits'), '+.2f'):>8} "
+            f"{cell(removed, '.0%'):>6}  {mark}"
         )
+
+    inductions = [r["induction_bits"] for r in iterations if r.get("induction_bits") is not None]
+    if inductions:
+        print()
+        print(
+            f"induction: first {inductions[0]:+.2f} bits, last {inductions[-1]:+.2f}, "
+            f"best {max(inductions):+.2f}"
+        )
+        print("  (in-context copying ability; loss alone would not show this)")
 
     rejections = [r for row in iterations if not row["promoted"] for r in row["reasons"]]
     if rejections:

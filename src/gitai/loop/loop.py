@@ -38,7 +38,8 @@ from typing import Any
 
 import numpy as np
 
-from gitai.data import BatchSampler, tokenize_to_shards
+from gitai.data import BatchSampler, QualityFilters, curate, tokenize_to_shards
+from gitai.eval import InductionProbe
 from gitai.safety import (
     Budget,
     HaltRequested,
@@ -76,6 +77,19 @@ class LoopConfig:
     # caller's to make explicitly.
     seeds_per_candidate: int = 1
 
+    # Generated documents are filtered before they enter the corpus. R7 found
+    # that corpus degeneracy drives collapse, so dropping degenerate documents is
+    # a direct mitigation rather than housekeeping.
+    filter_generated: bool = True
+    near_duplicate_threshold: float | None = 0.9
+    # Rejected documents are kept, not deleted — they are the record of what the
+    # model generates badly. Capped so a long run cannot fill the disk with them;
+    # the *counts* are always complete even when the sample is truncated.
+    max_retained_rejects: int = 500
+
+    # Loss hides structure: two models at equal BPB can differ in capability.
+    measure_induction: bool = True
+
 
 @dataclass
 class IterationOutcome:
@@ -86,6 +100,8 @@ class IterationOutcome:
     promoted: bool
     reasons: list[str] = field(default_factory=list)
     corpus_stats: dict[str, Any] | None = None
+    filter_report: dict[str, Any] | None = None
+    induction_bits: float | None = None
     real_data_fraction: float = 1.0
     train_tokens: int = 0
     seconds: float = 0.0
@@ -96,6 +112,10 @@ class IterationOutcome:
             f"  iter {self.iteration:>3}  BPB {self.val_bpb:.4f} "
             f"(incumbent {self.incumbent_bpb:.4f})  {mark}"
         )
+        if self.induction_bits is not None:
+            line += f"  induction {self.induction_bits:+.2f} bits"
+        if self.filter_report:
+            line += f"  filtered {self.filter_report['removed_fraction']:.0%}"
         if self.reasons:
             line += "\n           " + "; ".join(self.reasons)
         return line
@@ -195,15 +215,59 @@ class ImprovementLoop:
         save_model(model, str(path))
         return path
 
-    def _build_corpus(self, proposal: Proposal) -> tuple[list[str], dict | None]:
+    def _filter_generated(self, documents: list[str], iteration: int) -> tuple[list[str], dict]:
+        """Drop degenerate and duplicated generated documents before they train anything.
+
+        R7 found corpus degeneracy driving collapse, so this is a mitigation
+        aimed at the measured mechanism rather than general tidiness. A
+        collapsing model repeats itself, and near-duplicate removal is exactly
+        what catches that.
+
+        Rejects are written out rather than dropped: they are the record of what
+        the model generates badly, and the counts are what tell you a lineage is
+        degrading. The retained *sample* is capped so a long run cannot fill the
+        disk; the counts are always complete.
+        """
+        kept, report = curate(
+            documents,
+            filters=QualityFilters(min_chars=16, min_words=3),
+            near_duplicate_threshold=self.config.near_duplicate_threshold,
+        )
+
+        rejected = [d for d in documents if d not in set(kept)]
+        if rejected:
+            path = self.workspace / "rejects" / f"iter-{iteration:04d}.jsonl"
+            self.guard.check(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("w", encoding="utf-8") as fh:
+                for document in rejected[: self.config.max_retained_rejects]:
+                    fh.write(json.dumps({"text": document}) + "\n")
+
+        summary = {
+            "input": report.input_documents,
+            "kept": len(kept),
+            "removed": report.input_documents - len(kept),
+            "removed_fraction": (
+                (report.input_documents - len(kept)) / report.input_documents
+                if report.input_documents
+                else 0.0
+            ),
+            "by_stage": {stage.stage: stage.removed for stage in report.stages},
+            "rejections": dict(report.rejections),
+            "retained_sample": min(len(rejected), self.config.max_retained_rejects),
+        }
+        return kept, summary
+
+    def _build_corpus(self, proposal: Proposal) -> tuple[list[str], dict | None, dict | None]:
         """Mix real and freshly generated synthetic documents.
 
         The real corpus is always present — the search space cannot propose
         otherwise — and the synthetic share is taken from the incumbent's own
-        output at the proposed temperature.
+        output at the proposed temperature. Only the *generated* half is
+        filtered; the real corpus was curated in Phase 1.
         """
         if proposal.synthetic_fraction <= 0.0:
-            return list(self.real_documents), None
+            return list(self.real_documents), None, None
 
         target = int(len(self.real_documents) * proposal.synthetic_fraction * 4)
         documents, stats = generate_corpus(
@@ -216,6 +280,11 @@ class ImprovementLoop:
             top_k=proposal.top_k,
             seed=proposal.seed,
         )
+
+        filter_report = None
+        if self.config.filter_generated:
+            documents, filter_report = self._filter_generated(documents, proposal.iteration)
+
         self.synthetic_history.append(documents)
 
         rng = random.Random(proposal.seed)
@@ -223,7 +292,7 @@ class ImprovementLoop:
         n_synthetic = int(len(documents) * proposal.synthetic_fraction)
         corpus = rng.sample(self.real_documents, min(n_real, len(self.real_documents)))
         corpus += rng.sample(documents, min(n_synthetic, len(documents)))
-        return corpus, stats.to_dict()
+        return corpus, stats.to_dict(), filter_report
 
     # ---------------------------------------------------------------- iteration
 
@@ -236,7 +305,7 @@ class ImprovementLoop:
         # proposal arriving from anywhere else is held to the same bound.
         self.space.validate(proposal)
 
-        corpus, corpus_stats = self._build_corpus(proposal)
+        corpus, corpus_stats, filter_report = self._build_corpus(proposal)
         self._boundary()
 
         work = self.work_dir / f"iter-{iteration:04d}"
@@ -277,6 +346,15 @@ class ImprovementLoop:
                 best_model = candidate
 
         val_bpb = sum(scores) / len(scores)
+
+        # Loss hides structure. Two models at equal BPB can differ in what they
+        # can actually do, so the capability is recorded alongside the number.
+        induction_bits = None
+        if self.config.measure_induction and best_model is not None:
+            induction_bits = InductionProbe(
+                block_len=min(32, self.config.seq_len // 2), trials=16
+            ).run(best_model)["induction_score_bits"]
+
         self._boundary()
 
         shard_index = BatchSampler(work, "train", self.config.seq_len).index
@@ -314,6 +392,8 @@ class ImprovementLoop:
             promoted=promoted,
             reasons=reasons,
             corpus_stats=corpus_stats,
+            filter_report=filter_report,
+            induction_bits=induction_bits,
             real_data_fraction=proposal.real_fraction,
             train_tokens=train_sampler.total_tokens,
             seconds=time.perf_counter() - started,
@@ -329,6 +409,8 @@ class ImprovementLoop:
                 "proposal": proposal.to_dict(),
                 "reasons": reasons,
                 "corpus_stats": corpus_stats,
+                "filter_report": filter_report,
+                "induction_bits": induction_bits,
             }
         )
 
