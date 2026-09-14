@@ -23,6 +23,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+import torch
+
 from gitai.data import BatchSampler, ShardIndex, read_documents, tokenize_to_shards
 from gitai.model import RUNGS, ModelConfig, Transformer
 from gitai.selftrain import ARMS, Anchor, generate_corpus
@@ -33,7 +35,18 @@ ROOT = Path(__file__).resolve().parent.parent
 EOT = "<|endoftext|>"
 
 
-def build_model(vocab_size: int, args) -> Transformer:
+def build_model(vocab_size: int, args, seed: int) -> Transformer:
+    """Construct a model from an explicitly seeded generator.
+
+    This used to draw from whatever state the global generator happened to be
+    in. ``train()`` calls ``torch.manual_seed`` on entry, so every model built
+    after the first training call was incidentally deterministic -- but the
+    *first* one in a process was not, and it is the shared parent of every arm
+    for seed 0. Relying on the execution order of a sibling function for your
+    initial weights is not a property you can assert, so the seed is now passed
+    in and the arms are matched on initialisation by construction.
+    """
+    torch.manual_seed(seed)
     return Transformer(
         ModelConfig(
             vocab_size=vocab_size,
@@ -146,7 +159,7 @@ def main() -> None:
         sampler = shard(
             real_documents, tokenizer, work_root / f"s{seed}-g0", separator, args.seq_len
         )
-        model = build_model(index.vocab_size, args)
+        model = build_model(index.vocab_size, args, seed=seed)
         config = TrainConfig(**{**train_config.__dict__, "seed": seed})
         outcome = train(model, sampler, val_sampler, config)
         print(f"          val BPB {outcome.best_bpb:.4f}   ({outcome.seconds:.0f}s)")
@@ -205,7 +218,9 @@ def main() -> None:
                     args.seq_len,
                 )
 
-                model = build_model(index.vocab_size, args)
+                # Same init for every arm within a seed: the arms differ in their
+                # corpus, and nothing else should vary between them.
+                model = build_model(index.vocab_size, args, seed=seed)
                 config = TrainConfig(**{**train_config.__dict__, "seed": seed * 100 + generation})
                 outcome = train(model, sampler, val_sampler, config)
 
