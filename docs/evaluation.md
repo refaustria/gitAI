@@ -144,6 +144,49 @@ recorded in the lineage precisely so this is checkable rather than invisible.
 arms in parallel on a 4-core machine both slows them down *and*, through this
 mechanism, silently changes what they measure.)
 
+#### A seeded run that cannot be regenerated is not an audit trail
+
+The loop was not reproducible at a fixed seed for its entire existence, and
+nothing caught it, including the thirty tests written about it.
+
+`scripts/run_loop.py` constructed its Transformer and only then called `train()`
+-- which seeds *inside itself*, long after the weights were drawn. The incumbent
+was therefore initialised from an unseeded generator, and since every candidate
+is a clone of the incumbent, one missing line made every measurement in the
+lineage unreproducible. `scripts/train.py` seeds before it builds anything,
+which is why the controls reproduced and the loop did not, and why the
+discrepancy took so long to notice: half the experiment was behaving.
+
+Re-running seed 0 gave **identical proposals and different measurements**:
+
+| iteration | first run | second run | decision |
+|---|---|---|---|
+| 0 | 2.159980 | 2.153856 | promoted both times |
+| 12 | 1.868022 | 1.869494 | **promoted, then rejected** |
+
+The divergence is above the 0.0040 noise floor from the first iteration, and by
+iteration 12 it is enough to flip a promotion. Same seed, same proposals,
+different lineage.
+
+Three lessons, in order of how much they cost:
+
+1. **Seed before you construct, not before you train.** Module `__init__` draws
+   from the global generator. Seeding inside the training function is too late
+   and looks correct at every call site.
+2. **Assert on the measurements, not the plan.** The obvious reproducibility
+   check -- do two runs propose the same things? -- passed throughout, because
+   the search space has its own generator. Only the measured BPB and the
+   promotion decisions diverged, so those are what a test must compare.
+3. **A component handed its state cannot verify its own provenance.** The loop
+   receives a built incumbent and has no way to know whether the caller seeded.
+   It now records a sha256 of the starting weights in `models/model.json`, which
+   makes "these two runs should have been identical" a question the artifacts
+   answer, rather than one you answer three experiments later by noticing drift.
+
+This is the failure the constitution's auditability reading is about. A lineage
+that cannot be regenerated cannot be checked by anyone, including the system
+that produced it.
+
 ### 4. Pre-register the prediction
 
 Before each experiment, write down in `docs/lab-notebook.md`: the question, what
