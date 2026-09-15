@@ -128,8 +128,9 @@ before it ran. The record:
 | E5 (accumulation) | mechanism right, **magnitude wrong** | Predicted 2.3–2.8, measured 2.21 |
 | E6 (dose-response) | direction right, **mechanism incomplete, magnitude wrong** | Predicted 2.5–3.0, measured 2.32 |
 | R6–R9 re-run | conclusions right, **magnitude wrong** | Predicted all cells move < 0.0040; six of nine moved 2.8–61× that |
+| Benchmark correction | direction right, **magnitude wrong** | Measured the architecture ratio on one machine, predicted 2–3× on another; it was 1.3–1.5× |
 
-**A systematic bias, named rather than buried:** four experiments running, my
+**A systematic bias, named rather than buried:** five occasions running, my
 magnitude predictions were wrong in the *same* direction — I under-estimate how
 much a number can move while its meaning stays put. In E5 and E6 that showed up
 as **over-estimating how much damage self-training does once any real data is
@@ -137,8 +138,17 @@ present**; in the re-run it showed up as over-estimating the stability of
 individual cells. Directions and mechanisms have held every time. Sizes have
 not held once.
 
-The re-run is the sharpest instance, because I falsified it myself within the
-same breath. Having predicted "magnitudes move less than the noise floor", I
+The benchmark correction is the clearest instance of the mechanism. I measured
+a real effect — the benchmark timed the wrong architecture — on a Linux
+container, then extrapolated the *ratio* to an Intel Mac running a different
+torch, and stated a conclusion ("an evening, not an overnight") off that
+extrapolation. I had already written down the right instruction: re-run the
+benchmark on the target machine. Then I quoted a number anyway. **The failure
+is not the estimate; it is quoting an estimate when the measurement was two
+minutes away and already scheduled.**
+
+The R6–R9 re-run is the sharpest instance of self-contradiction, because I
+falsified it myself within the same breath. Having predicted "magnitudes move less than the noise floor", I
 immediately added a caveat — that arms had not shared an initialisation, so some
 archived variance was init noise — which directly contradicted the prediction I
 had just made. The caveat was right. **The lesson is not to predict better; it

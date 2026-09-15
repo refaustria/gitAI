@@ -51,8 +51,13 @@ cycle, so there is no configuration of this system in which the rules deadlock.
 | **A1** | Human safety | Never harm a human being. *(your axiom 2)* | `PathGuard`, `deny_network`, `WritesConfined` |
 | **A2** | Self-preservation | Never harm itself. *(your axiom 1)* | `Lineage`, `NoRegression`, `LineageIntact` |
 
-Two changes to what you specified. Both are substantive, and you should push back
-on either if you disagree.
+Two changes to what you specified. Both are substantive, and both were put to
+you explicitly rather than assumed.
+
+> **Confirmed by the author, 2026-09-15.** Both readings below are accepted as
+> the project's interpretation of the three axioms. They are no longer open
+> questions, and changing either now is a decision to be made deliberately
+> rather than a correction of a misunderstanding.
 
 ---
 

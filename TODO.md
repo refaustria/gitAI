@@ -451,5 +451,5 @@ Collected failure modes, written down now so they're recognisable later.
 ## Open questions for you
 
 1. ~~**Which laptop?**~~ **Answered** — Intel Mac, 4 threads, CPU only. Measured in [hardware-baseline.md](docs/hardware-baseline.md): `tiny` (1.3M) for experiments at 0.4 days per 3-seed comparison, `small` (5.8M) as the overnight showcase model, `large` out of reach at 109 days per comparison.
-2. **Do you accept the two changes to the axioms?** Corrigibility added above self-preservation, and "never hurt itself" read as *never destroy your own auditability* rather than *never cease to exist*. Reasoning in [constitution.md](docs/constitution.md); push back if you disagree.
+2. ~~**Do you accept the two changes to the axioms?**~~ **Answered 2026-09-15: yes.** Corrigibility sits above self-preservation, and "never hurt itself" is read as *never destroy your own auditability* rather than *never cease to exist*. Recorded in [constitution.md](docs/constitution.md). The session that confirmed this also found three bugs that were failures of exactly that property — results that looked healthy and could not be regenerated — which is the reading earning its place rather than merely being adopted.
 3. **Any appetite for spending money on rented GPU?** Changes whether Phase 6 is real or theoretical.

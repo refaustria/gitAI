@@ -24,55 +24,61 @@ both already load-bearing elsewhere in these docs:
 
 ## Measured throughput
 
-> **These numbers are stale and overstate the cost.** They were produced by a
-> benchmark that timed a *proxy* architecture — a LayerNorm/GELU stack using
-> `nn.MultiheadAttention` — written in Phase 1, before the real model existed,
-> and never swapped out. Its own docstring said so ("Not the project's model —
-> that gets built properly in Phase 2") and nobody acted on it. Measured
-> side by side on one machine, the proxy runs **1.6–5× slower** than the
-> v6_modern model you actually train, and the gap is widest at the small
-> configs that matter most here:
->
-> | config | proxy h/100M | real h/100M | ratio |
-> |---|---:|---:|---:|
-> | tiny | 7.6 | 1.5 | 0.20 |
-> | small | 11.4 | 3.9 | 0.34 |
-> | medium | 18.3 | 8.5 | 0.46 |
-> | large | 40.3 | 20.6 | 0.51 |
->
-> (Both columns from the same Linux container, so the ratio is architecture, not
-> hardware.) `scripts/benchmark.py` now times the real model by default;
-> `--proxy` reproduces the old numbers. **Re-run `make bench` on the Mac** — it
-> takes about two minutes — and replace the table below. Until then, treat every
-> figure here as an upper bound roughly 2–3× too high at `tiny` and `small`.
-
-`make bench`, 2026-09-14 (proxy architecture):
+`make bench`, 2026-09-15, timing the **real v6_modern architecture** — the one
+you actually train:
 
 | config | params | non-emb | s/step | tok/s | h/100M tokens |
 |---|---:|---:|---:|---:|---:|
-| tiny | 1,317,632 | 793,344 | 0.970 | 4,225 | 6.6 |
-| small | 5,787,648 | 4,739,072 | 1.716 | 2,387 | 11.6 |
-| medium | 15,769,344 | 14,196,480 | 3.605 | 1,136 | 24.5 |
-| large | 39,926,784 | 37,829,632 | 8.019 | 511 | 54.4 |
+| tiny | 1,311,360 | 787,072 | 0.439 | 9,340 | **3.0** |
+| small | 5,767,424 | 4,718,848 | 1.169 | 3,503 | **7.9** |
+| medium | 15,735,168 | 14,162,304 | 2.885 | 1,420 | **19.6** |
+| large | 39,852,544 | 37,755,392 | 6.012 | 681 | **40.8** |
 
 Throughput falls sub-linearly with size — `large` has 30× the parameters of
-`tiny` but only 8× the cost per step — so the per-token price of a bigger model
+`tiny` but only 14× the cost per step — so the per-token price of a bigger model
 is better than the parameter count suggests. It is the *token budget* that
-grows, and that is what makes the large configs impossible here.
+grows, and that is what puts the large configs out of reach.
+
+### The earlier numbers, and a correction that did not transfer
+
+This table previously came from a benchmark that timed a *proxy* architecture —
+a LayerNorm/GELU stack on `nn.MultiheadAttention`, written in Phase 1 before the
+real model existed. Its own docstring said it was temporary ("Not the project's
+model — that gets built properly in Phase 2") and it was never swapped, so every
+scoping number in this project described a transformer nobody trains.
+
+| config | proxy h/100M | real h/100M | ratio here | ratio on a Linux container |
+|---|---:|---:|---:|---:|
+| tiny | 6.6 | 3.0 | 0.45 | 0.20 |
+| small | 11.6 | 7.9 | **0.68** | 0.34 |
+| medium | 24.5 | 19.6 | 0.80 | 0.46 |
+| large | 54.4 | 40.8 | 0.75 | 0.51 |
+
+The last column is the part worth recording. Having measured the architecture
+correction on a Linux container with torch 2.14, I predicted the real numbers
+here would be 2–3× lower and called `small` "an evening, not an overnight".
+**The ratio did not transfer.** On Intel macOS with torch 2.2.2 the real model
+is only 1.3–1.5× faster than the proxy. An architecture-relative ratio still
+rides on the BLAS, the torch version and the CPU; it is not a portable constant,
+and `small` is 9.1 hours — a night, as originally stated.
+
+Direction right, size wrong, in the optimistic direction: the fifth consecutive
+instance of that pattern in this project (see [findings.md](findings.md)). The
+correct move was the one stated and then talked past — re-run the benchmark on
+the target machine and quote nothing until it lands.
 
 ## What that costs in practice
 
 At the Chinchilla-ish heuristic of ~20 tokens per parameter:
 
-| config | 20× tokens | one run | **a 3-seed, 2-arm experiment** | 1 epoch of TinyStories |
-|---|---:|---:|---:|---:|
-| tiny | 26M | **1.7 h** | **0.4 days** | 31 h |
-| small | 116M | **13.4 h** | 3.4 days | 55 h |
-| medium | 315M | 77 h | 19 days | 115 h |
-| large | 799M | 434 h | 109 days | 256 h |
+| config | 20× tokens | one run | **a 3-seed, 2-arm experiment** |
+|---|---:|---:|---:|
+| tiny | 26M | **0.8 h** | **0.2 days** |
+| small | 115M | **9.1 h** | 2.3 days |
+| medium | 315M | 62 h | 15 days |
+| large | 797M | 325 h | 81 days |
 
-The middle column is the one that matters — bearing in mind that these are
-proxy-derived and the real figures are likely 2–3× lower at `tiny` and `small`. **Research is not one run** — a claim
+The last column is the one that matters. **Research is not one run** — a claim
 needs seeds, and a comparison needs two arms, so the real unit of work is six
 runs and not one. That column is what turns "too slow" from an opinion into a
 number.
@@ -82,18 +88,19 @@ number.
 **Two configs, for two different jobs.**
 
 - **`tiny` (1.3M) is the experimental workhorse.** A full 3-seed, 2-arm
-  comparison finishes overnight. Every result in
+  comparison finishes in about five hours — a working day, not a night. Every result in
   [results.md](results.md) was produced at roughly this scale, and the whole
   R6–R10 series is only possible because a run is cheap enough to repeat — which
   this project has now had to do twice.
-- **`small` (5.8M) is the showcase model.** One overnight run at 20× tokens.
+- **`small` (5.8M) is the showcase model.** One overnight run at 20× tokens —
+  **9.1 hours**, genuinely a night.
   This is the smallest size where TinyStories-style corpora are reported to
   produce genuinely coherent short stories, so it is the config to spend a night
   on once the experimental question is settled at `tiny`.
 
-**`medium` is a single deliberate commitment**, not something to iterate on: 77
+**`medium` is a single deliberate commitment**, not something to iterate on: 62
 hours is a long weekend for *one* datapoint, with no seeds and no control.
-**`large` is out of reach** on this machine — 109 days for one comparison — and
+**`large` is out of reach** on this machine — 81 days for one comparison — and
 is the honest boundary where Decision 4's "rent a GPU?" question becomes real
 rather than theoretical.
 
