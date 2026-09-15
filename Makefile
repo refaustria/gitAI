@@ -1,4 +1,4 @@
-.PHONY: help setup test test-fast lint fmt typecheck bench demo data data-tinystories data-sweep train inspect eval report noise-floor collapse collapse-temps halt clean
+.PHONY: help setup test test-fast lint fmt typecheck bench demo data data-tinystories data-sweep train train-tinystories train-tinystories-smoke resume inspect eval report noise-floor collapse collapse-temps collapse-doses collapse-all halt clean
 
 help:
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -45,6 +45,29 @@ data-sweep:  ## compare vocabulary sizes (the Decision 4 measurement)
 
 train:  ## train a small model on the prepared shards
 	.venv/bin/python scripts/train.py --steps 1200
+
+# The `small` rung from scripts/benchmark.py: 5.77M params, 6 layers, d_model 256.
+# 28,000 steps x 16 x 256 = 114.7M tokens, ~20 tokens per parameter, and about a
+# quarter of one pass over TinyStories -- so nothing is seen twice.
+TINYSTORIES_SMALL = --data data/processed/tinystories \
+	--d-model 256 --n-layer 6 --n-head 8 --seq-len 256 --batch-size 16
+
+train-tinystories-smoke:  ## 200 steps on TinyStories: does the pipeline work at all? (~2 min)
+	.venv/bin/python scripts/train.py $(TINYSTORIES_SMALL) \
+		--steps 200 --lr 1e-3 --warmup 50 --eval-every 100 --name tinystories-smoke
+
+train-tinystories:  ## the showcase run: 5.8M params, 115M tokens, resumable
+	.venv/bin/python scripts/train.py $(TINYSTORIES_SMALL) \
+		--steps 28000 --lr 1e-3 --warmup 500 --eval-every 500 \
+		--checkpoint-every 500 --keep-last 3 --name tinystories-small
+
+# A laptop will sleep, and a run this long will be interrupted. Resume is exact:
+# weights, optimiser moments, step, and both RNG streams. Point it at the run dir.
+resume:  ## continue an interrupted run: make resume RUN=runs/<dir>
+	@test -n "$(RUN)" || { echo "usage: make resume RUN=runs/<dir>"; exit 1; }
+	.venv/bin/python scripts/train.py $(TINYSTORIES_SMALL) \
+		--steps 28000 --lr 1e-3 --warmup 500 --eval-every 500 \
+		--checkpoint-every 500 --keep-last 3 --resume $(RUN)
 
 inspect:  ## look inside the most recently trained model
 	.venv/bin/python scripts/inspect_model.py

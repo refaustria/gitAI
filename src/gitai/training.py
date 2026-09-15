@@ -17,7 +17,14 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from gitai.checkpoint import load_checkpoint, rotate_checkpoints, save_checkpoint
+from gitai.checkpoint import (
+    latest_checkpoint as _latest_checkpoint,
+)
+from gitai.checkpoint import (
+    load_checkpoint,
+    rotate_checkpoints,
+    save_checkpoint,
+)
 from gitai.data import BatchSampler
 from gitai.interpret.surprisal import surprisal_bits
 
@@ -249,19 +256,6 @@ def train(
 
     result.seconds = elapsed_offset + time.perf_counter() - started
     return result
-
-
-def _latest_checkpoint(root: Path) -> Path | None:
-    if not root.exists():
-        return None
-    candidates = []
-    for path in root.glob("step-*"):
-        if path.is_dir():
-            try:
-                candidates.append((int(path.name.rsplit("-", 1)[-1]), path))
-            except ValueError:
-                continue
-    return max(candidates)[1] if candidates else None
 
 
 def _save_best_weights(root: Path, model) -> None:

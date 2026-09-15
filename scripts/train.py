@@ -27,6 +27,12 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from gitai.checkpoint import (
+    latest_checkpoint,
+    load_checkpoint,
+    rotate_checkpoints,
+    save_checkpoint,
+)
 from gitai.data import BatchSampler, ShardIndex
 from gitai.interpret import bits_per_byte, surprisal_bits
 from gitai.model import RUNGS, BigramModel, ModelConfig, Transformer
@@ -164,6 +170,10 @@ def main() -> None:
     epochs = args.steps * args.batch_size * args.seq_len / train.total_tokens
     print(f"{args.steps} steps x {args.batch_size} x {args.seq_len} = {epochs:.1f} epochs\n")
 
+    # Created before the resume block: load_checkpoint restores this generator's
+    # state, which is what puts the data loader back on the same batch sequence.
+    rng = np.random.default_rng(args.seed)
+
     # Weight decay on matrices only. Decaying norms, biases and embeddings is a
     # small, silent, universally-copied mistake.
     decay = [p for n, p in model.named_parameters() if p.dim() >= 2]
@@ -177,9 +187,32 @@ def main() -> None:
         betas=(0.9, 0.95),
     )
 
-    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    run_dir = ROOT / "runs" / f"{stamp}-{args.name or args.rung}"
+    if args.resume:
+        run_dir = Path(args.resume)
+        if not (run_dir / "checkpoints").is_dir():
+            sys.exit(f"--resume: {run_dir} has no checkpoints/ directory")
+    else:
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        run_dir = ROOT / "runs" / f"{stamp}-{args.name or args.rung}"
     (run_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
+
+    # Restore before the loop, and refuse rather than silently starting over.
+    # These three flags were parsed and then ignored for the whole life of this
+    # script: --resume on a run with no step checkpoint quietly trained from
+    # scratch and printed a normal-looking result, which on a multi-hour laptop
+    # run is the most expensive way to fail.
+    start_step, resumed_from = 0, None
+    if args.resume:
+        latest = latest_checkpoint(run_dir / "checkpoints")
+        if latest is None:
+            sys.exit(
+                f"--resume: no step-* checkpoint under {run_dir / 'checkpoints'}. "
+                "Was the original run started with --checkpoint-every?"
+            )
+        restored = load_checkpoint(latest, model, optimiser, rng)
+        start_step = restored.step + 1
+        resumed_from = latest
+        print(f"resuming from {latest} at step {start_step}")
 
     (run_dir / "config.yaml").write_text(
         json.dumps(
@@ -209,14 +242,13 @@ def main() -> None:
         ),
         encoding="utf-8",
     )
-    metrics_file = (run_dir / "metrics.jsonl").open("w", encoding="utf-8")
+    metrics_file = (run_dir / "metrics.jsonl").open("a" if resumed_from else "w", encoding="utf-8")
 
-    rng = np.random.default_rng(args.seed)
     model.train()
     started = time.perf_counter()
-    best_bpb = float("inf")
+    best_bpb = restored.best_bpb if resumed_from else float("inf")
 
-    for step in range(args.steps):
+    for step in range(start_step, args.steps):
         lr = lr_at(step, args.steps, args.lr, args.warmup)
         for group in optimiser.param_groups:
             group["lr"] = lr
@@ -273,6 +305,18 @@ def main() -> None:
                         indent=2,
                     )
                 )
+
+        if args.checkpoint_every and (step + 1) % args.checkpoint_every == 0:
+            save_checkpoint(
+                run_dir / "checkpoints" / f"step-{step}",
+                model,
+                optimiser,
+                step=step,
+                rng=rng,
+                best_bpb=best_bpb,
+                elapsed=time.perf_counter() - started,
+            )
+            rotate_checkpoints(run_dir / "checkpoints", keep=args.keep_last)
 
     metrics_file.close()
 

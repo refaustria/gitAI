@@ -24,7 +24,29 @@ both already load-bearing elsewhere in these docs:
 
 ## Measured throughput
 
-`make bench`, 2026-09-14:
+> **These numbers are stale and overstate the cost.** They were produced by a
+> benchmark that timed a *proxy* architecture — a LayerNorm/GELU stack using
+> `nn.MultiheadAttention` — written in Phase 1, before the real model existed,
+> and never swapped out. Its own docstring said so ("Not the project's model —
+> that gets built properly in Phase 2") and nobody acted on it. Measured
+> side by side on one machine, the proxy runs **1.6–5× slower** than the
+> v6_modern model you actually train, and the gap is widest at the small
+> configs that matter most here:
+>
+> | config | proxy h/100M | real h/100M | ratio |
+> |---|---:|---:|---:|
+> | tiny | 7.6 | 1.5 | 0.20 |
+> | small | 11.4 | 3.9 | 0.34 |
+> | medium | 18.3 | 8.5 | 0.46 |
+> | large | 40.3 | 20.6 | 0.51 |
+>
+> (Both columns from the same Linux container, so the ratio is architecture, not
+> hardware.) `scripts/benchmark.py` now times the real model by default;
+> `--proxy` reproduces the old numbers. **Re-run `make bench` on the Mac** — it
+> takes about two minutes — and replace the table below. Until then, treat every
+> figure here as an upper bound roughly 2–3× too high at `tiny` and `small`.
+
+`make bench`, 2026-09-14 (proxy architecture):
 
 | config | params | non-emb | s/step | tok/s | h/100M tokens |
 |---|---:|---:|---:|---:|---:|
@@ -49,7 +71,8 @@ At the Chinchilla-ish heuristic of ~20 tokens per parameter:
 | medium | 315M | 77 h | 19 days | 115 h |
 | large | 799M | 434 h | 109 days | 256 h |
 
-The middle column is the one that matters. **Research is not one run** — a claim
+The middle column is the one that matters — bearing in mind that these are
+proxy-derived and the real figures are likely 2–3× lower at `tiny` and `small`. **Research is not one run** — a claim
 needs seeds, and a comparison needs two arms, so the real unit of work is six
 runs and not one. That column is what turns "too slow" from an opinion into a
 number.

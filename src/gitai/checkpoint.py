@@ -37,7 +37,13 @@ from typing import Any
 import numpy as np
 import torch
 
-__all__ = ["ResumeState", "load_checkpoint", "rotate_checkpoints", "save_checkpoint"]
+__all__ = [
+    "ResumeState",
+    "latest_checkpoint",
+    "load_checkpoint",
+    "rotate_checkpoints",
+    "save_checkpoint",
+]
 
 MODEL_FILE = "model.safetensors"
 OPTIMISER_FILE = "optimiser.safetensors"
@@ -181,6 +187,26 @@ def load_checkpoint(
         elapsed=payload.get("elapsed", 0.0),
         metadata=payload.get("metadata") or {},
     )
+
+
+def latest_checkpoint(root: Path | str) -> Path | None:
+    """The highest-numbered ``step-N`` checkpoint under ``root``, or None.
+
+    Public because both the library loop and ``scripts/train.py`` need it, and
+    the CLI having no way to find a checkpoint is why its --resume flag sat
+    parsed-but-unused while the library's resume was fully tested.
+    """
+    root = Path(root)
+    if not root.exists():
+        return None
+    candidates = []
+    for path in root.glob("step-*"):
+        if path.is_dir():
+            try:
+                candidates.append((int(path.name.rsplit("-", 1)[-1]), path))
+            except ValueError:
+                continue
+    return max(candidates)[1] if candidates else None
 
 
 def rotate_checkpoints(directory: Path | str, keep: int = 2, pattern: str = "step-*") -> list[Path]:

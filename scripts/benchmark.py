@@ -18,6 +18,9 @@ import json
 import platform
 import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 CONFIGS = [
     # (name, n_layer, d_model, n_head, seq_len, batch)
@@ -46,11 +49,35 @@ def pick_device(torch, requested: str) -> str:
     return "cpu"
 
 
-def build_model(torch, n_layer: int, d_model: int, n_head: int, vocab: int = 4096):
-    """A throwaway pre-norm transformer, only ever used for timing.
+def build_real_model(n_layer: int, d_model: int, n_head: int, seq_len: int, vocab: int = 4096):
+    """The architecture you will actually train: v6_modern.
 
-    Not the project's model — that gets built properly in Phase 2. This exists
-    so the measurement reflects a realistic mix of attention, MLP and norm work.
+    The proxy below predates the real model and was never swapped out, so every
+    number in docs/hardware-baseline.md described a transformer nobody trains.
+    It was not a small discrepancy: the proxy's `nn.MultiheadAttention` and
+    LayerNorm/GELU stack runs ~1.6x *slower* than the real RMSNorm/RoPE/SwiGLU
+    model at the same dimensions, so the table overstated every training cost
+    by that factor. A benchmark whose whole purpose is scoping real runs has to
+    time the real thing.
+    """
+    from gitai.model import RUNGS, ModelConfig, Transformer
+
+    config = ModelConfig(
+        vocab_size=vocab,
+        seq_len=seq_len,
+        d_model=d_model,
+        n_layer=n_layer,
+        n_head=n_head,
+        **RUNGS["v6_modern"],
+    )
+    return Transformer(config)
+
+
+def build_model(torch, n_layer: int, d_model: int, n_head: int, vocab: int = 4096):
+    """A throwaway pre-norm transformer, kept only for --proxy comparisons.
+
+    Retained so the pre-2026-09-15 numbers in docs/hardware-baseline.md stay
+    reproducible, not because it should be used for scoping.
     """
     import torch.nn as nn
 
@@ -90,13 +117,16 @@ def build_model(torch, n_layer: int, d_model: int, n_head: int, vocab: int = 409
     return Model()
 
 
-def benchmark_one(torch, cfg, device: str, steps: int, compile_model: bool) -> dict:
+def benchmark_one(torch, cfg, device: str, steps: int, compile_model: bool, proxy: bool) -> dict:
     import torch.nn.functional as F
 
     name, n_layer, d_model, n_head, seq_len, batch = cfg
     torch.manual_seed(0)
 
-    model = build_model(torch, n_layer, d_model, n_head).to(device)
+    if proxy:
+        model = build_model(torch, n_layer, d_model, n_head).to(device)
+    else:
+        model = build_real_model(n_layer, d_model, n_head, seq_len).to(device)
     if compile_model:
         try:
             model = torch.compile(model)
@@ -112,7 +142,9 @@ def benchmark_one(torch, cfg, device: str, steps: int, compile_model: bool) -> d
 
     def one_step() -> None:
         opt.zero_grad(set_to_none=True)
-        logits = model(x)
+        out = model(x)
+        # The real model returns (logits, cache); the proxy returns logits.
+        logits = out[0] if isinstance(out, tuple) else out
         loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), y.reshape(-1))
         loss.backward()
         opt.step()
@@ -148,6 +180,12 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=10)
     parser.add_argument("--compile", action="store_true", help="also measure torch.compile")
     parser.add_argument("--json", metavar="PATH", help="write results as JSON")
+    parser.add_argument(
+        "--proxy",
+        action="store_true",
+        help="time the throwaway pre-norm model instead of v6_modern; only for "
+        "reproducing numbers recorded before 2026-09-15",
+    )
     args = parser.parse_args()
 
     torch = _require_torch()
@@ -169,7 +207,9 @@ def main() -> None:
 
     results = []
     for cfg in CONFIGS:
-        row = benchmark_one(torch, cfg, device, args.steps, compile_model=args.compile)
+        row = benchmark_one(
+            torch, cfg, device, args.steps, compile_model=args.compile, proxy=args.proxy
+        )
         results.append(row)
         if "error" in row:
             print(f"{row['config']:<8} {row['error']}")
